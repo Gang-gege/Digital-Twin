@@ -48,12 +48,24 @@ h2 {
 .urgent { color: $urgent; }
 .muted { color: $offline; }
 
+.chart-board { min-width: 0; }
 .charts {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 132px minmax(0, 1fr);
   gap: 8px;
-  height: 168px;
-  div { min-width: 0; height: 168px; }
+  height: 148px;
+  overflow: hidden;
+  div { min-width: 0; height: 148px; overflow: hidden; }
+}
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 6px;
+  color: $muted;
+  font-size: 12px;
+  span { display: inline-flex; align-items: center; gap: 4px; }
+  i { width: 8px; height: 8px; border-radius: 2px; }
 }
 
 .switches, .tools, .presets {

@@ -1,6 +1,9 @@
 
 .park-root {
 & {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   color-scheme: dark;
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   background: #070d18;
@@ -34,6 +37,8 @@ button { cursor: pointer; }
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
   background: var(--panel);
   border-right: 1px solid var(--line);
   backdrop-filter: blur(16px);
@@ -45,6 +50,10 @@ button { cursor: pointer; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #0b1424;
   border-bottom: 1px solid var(--line);
 }
 .brand p {
@@ -70,7 +79,7 @@ button { cursor: pointer; }
   border-radius: 4px;
 }
 
-.block { border-bottom: 1px solid var(--line); }
+.block { flex-shrink: 0; border-bottom: 1px solid var(--line); }
 .block h2, .block-head h2 {
   margin: 0 0 10px;
   font-size: 12px;
@@ -79,8 +88,7 @@ button { cursor: pointer; }
   letter-spacing: 0.08em;
 }
 .alarm-block {
-  flex: 1;
-  min-height: 0;
+  flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   border-bottom: 0;
@@ -185,7 +193,12 @@ button { cursor: pointer; }
 .file-btn { display: block; }
 
 .chips button { padding: 2px 6px; }
-.alarm-list { overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.alarm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 4px;
+}
 .alarm-item, .info-card li button {
   display: flex;
   align-items: center;
@@ -211,7 +224,13 @@ button { cursor: pointer; }
 .alarm-item em, .info-card li em, .info-card header p { color: var(--muted); font-style: normal; font-size: 12px; }
 .alarm-item time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .empty { color: var(--muted); font-size: 13px; margin: 8px 0; }
-.hint { color: var(--muted); font-size: 12px; line-height: 1.5; border-top: 1px solid var(--line); }
+.hint {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  border-top: 1px solid var(--line);
+}
 
 .stage { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .view { position: relative; flex: 1; min-height: 0; }

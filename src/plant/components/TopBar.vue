@@ -24,8 +24,10 @@ const menus: Array<[PanelTab, string]> = [
   <header class="topbar">
     <div class="brand">
       <button class="back" type="button" @click="$emit('leave')">返回</button>
-      <p>POWER / WATER</p>
-      <strong>澄源工业厂区</strong>
+      <div class="brand-copy">
+        <p>POWER / WATER</p>
+        <strong>澄源工业厂区</strong>
+      </div>
     </div>
     <div class="ticker">
       <span>

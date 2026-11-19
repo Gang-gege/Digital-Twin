@@ -19,24 +19,22 @@ let pie: echarts.ECharts | null = null;
 let bar: echarts.ECharts | null = null;
 
 const muted = '#8aa39a';
+const COLORS = ['#e3a008', '#2ec4b6', '#4aa3ff', '#f0b429', '#ff5a62', '#3dbe8c'];
 
 function render() {
   pie?.setOption({
     tooltip: { trigger: 'item' },
-    legend: {
-      orient: 'vertical',
-      right: 0,
-      top: 'middle',
-      textStyle: { color: muted, fontSize: 11 },
-      itemWidth: 8,
-      itemHeight: 8,
-    },
+    legend: { show: false },
     series: [{
       type: 'pie',
-      radius: ['48%', '72%'],
-      center: ['32%', '50%'],
+      radius: ['42%', '64%'],
+      center: ['50%', '50%'],
       label: { show: false },
-      data: props.shares.map((item) => ({ name: item.usage, value: Math.round(item.area) })),
+      data: props.shares.map((item, index) => ({
+        name: item.usage,
+        value: Math.round(item.area),
+        itemStyle: { color: COLORS[index % COLORS.length] },
+      })),
     }],
   });
   bar?.setOption({
@@ -81,8 +79,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="charts">
-    <div ref="pieEl" />
-    <div ref="barEl" />
+  <div class="chart-board">
+    <div class="charts">
+      <div ref="pieEl" />
+      <div ref="barEl" />
+    </div>
+    <div class="chart-legend">
+      <span v-for="(item, index) in shares" :key="item.usage">
+        <i :style="{ background: COLORS[index % COLORS.length] }" />{{ item.usage }}
+      </span>
+    </div>
   </div>
 </template>
