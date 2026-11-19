@@ -4,19 +4,19 @@ import {
   buildings,
   devices,
   gates,
-  heatPoints,
   PARK_CENTER,
   PARK_NAME,
   pipes,
   presetTarget,
 } from '../mock/parkData';
-import type { AMapMap, AMapNamespace, AMapOverlay, HeatMapLayer } from '../types/amap';
+import type { AMapMap, AMapNamespace, AMapOverlay } from '../../types/amap';
 import type {
   Building,
   Device,
   EntityKind,
   Gate,
   LayerName,
+  LngLat,
   MeasureMode,
   ParkEntity,
   Pipe,
@@ -26,8 +26,9 @@ import type {
   SceneHooks,
   SelectionPayload,
   TimeMode,
+  WeatherMode,
 } from '../types/park';
-import { CoordTransformer, syncMapCamera } from '../utils/coord';
+import { CoordTransformer, syncMapCamera } from '../../utils/coord';
 import {
   presentBuilding,
   presentDevice,
@@ -38,10 +39,10 @@ import {
   statusKey,
 } from '../utils/present';
 import { AlarmManager } from './AlarmManager';
-import { CameraController } from './CameraController';
+import { CameraController } from '../../core/CameraController';
 import { InteractionController } from './InteractionController';
 import { LayerManager } from './LayerManager';
-import { ModelLoader } from './ModelLoader';
+import { ModelLoader } from '../../core/ModelLoader';
 import { ParkWorld } from './createWorld';
 
 const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight']);
@@ -74,13 +75,15 @@ export class MapScene {
   declare boxMode: boolean;
   declare autoRotate: boolean;
   declare timeMode: TimeMode;
-  declare heatVisible: boolean;
+  declare weather: WeatherMode;
+  declare pipeGhost: boolean;
+  declare showRuler: boolean;
+  declare forkliftSpeed: number;
   declare selection: SelectionPayload | null;
   declare ready: boolean;
   declare clock: THREE.Clock;
   declare lastFrame: number;
   declare lastView: number;
-  declare lastHeat: number;
   declare markerById: Map<string, AMapOverlay>;
   declare labelById: Map<string, AMapOverlay>;
   declare AMap: AMapNamespace;
@@ -99,7 +102,6 @@ export class MapScene {
   declare observer?: ResizeObserver;
   declare deviceOverlay: AMapOverlay;
   declare buildingOverlay: AMapOverlay;
-  declare heatmap: HeatMapLayer;
   declare onKeyDown: (event: KeyboardEvent) => void;
   declare onDragOver: (event: DragEvent) => void;
   declare onDrop: (event: DragEvent) => void;
@@ -120,13 +122,15 @@ export class MapScene {
     this.boxMode = false;
     this.autoRotate = false;
     this.timeMode = 'day';
-    this.heatVisible = false;
+    this.weather = 'clear';
+    this.pipeGhost = false;
+    this.showRuler = false;
+    this.forkliftSpeed = 1;
     this.selection = null;
     this.ready = false;
     this.clock = new THREE.Clock();
     this.lastFrame = 0;
     this.lastView = 0;
-    this.lastHeat = 0;
     this.markerById = new Map();
     this.labelById = new Map();
     this.renderFailed = false;
@@ -145,11 +149,11 @@ export class MapScene {
       const AMap = await loadAMap({
         key,
         version: '2.0',
-        plugins: ['AMap.Scale', 'AMap.ControlBar', 'AMap.HeatMap'],
+        plugins: ['AMap.Scale', 'AMap.ControlBar'],
       }) as AMapNamespace;
       this.AMap = AMap;
 
-      this.hooks.onLoading?.({ step: 2, text: '正在创建三维地图并生成园区' });
+      this.hooks.onLoading?.({ step: 2, text: '正在创建三维地图并生成厂区' });
       this.map = new AMap.Map(this.container, {
         viewMode: '3D',
         center: PARK_CENTER,
@@ -338,31 +342,17 @@ export class MapScene {
     this.map.add(this.deviceOverlay);
     this.map.add(this.buildingOverlay);
 
-    this.heatmap = new AMap.HeatMap(this.map, {
-      radius: 36,
-      opacity: [0, 0.8],
-      zIndex: 4,
-      gradient: {
-        0.2: '#1d4ed8',
-        0.45: '#22d3ee',
-        0.7: '#facc15',
-        1: '#ef4444',
-      },
-    });
-    this.heatmap.setDataSet({
-      data: heatPoints.map((point) => ({ lng: point.lng, lat: point.lat, count: point.count })),
-      max: 100,
-    });
-    this.heatmap.hide?.();
-
     this.layers.register('building', this.world.buildingGroup);
     this.layers.register('building', this.buildingOverlay);
+    this.layers.register('wall', this.world.wallGroup);
     this.layers.register('device', this.world.deviceGroup);
     this.layers.register('device', this.deviceOverlay);
     this.layers.register('pipe', this.world.pipeGroup);
     this.layers.register('alarm', this.world.alarmGroup);
     this.layers.register('flyline', this.world.flylineGroup);
-    this.layers.register('heat', this.heatmap);
+    this.layers.register('forklift', this.world.forkliftGroup);
+    this.layers.register('grid', this.world.gridGroup);
+    this.layers.register('hazard', this.world.hazardGroup);
     this.layers.register('measure', {
       show: () => this.interaction.setMeasureVisible(true),
       hide: () => this.interaction.setMeasureVisible(false),
@@ -400,12 +390,10 @@ export class MapScene {
       this.lastFrame = now;
       const time = this.clock.getElapsedTime();
       this.world.updateEffects(time);
+      this.world.updateForklifts(dt);
+      if (this.camera) this.world.updateRain(this.camera);
       const spin = this.autoRotate && this.roamMode === 'free' && this.measureMode === 'none' && !this.boxMode;
       this.cameraCtrl.update(dt, spin);
-      if (this.heatVisible && now - this.lastHeat > 1200) {
-        this.lastHeat = now;
-        this.pushHeat(time);
-      }
       this.map.render();
       if (now - this.lastView > 260) {
         this.lastView = now;
@@ -413,18 +401,6 @@ export class MapScene {
       }
     };
     this.raf = requestAnimationFrame(step);
-  }
-
-  pushHeat(time: number) {
-    if (!this.heatmap?.setDataSet) return;
-    this.heatmap.setDataSet({
-      max: 100,
-      data: heatPoints.map((point, index) => ({
-        lng: point.lng,
-        lat: point.lat,
-        count: Math.max(6, point.count + Math.sin(time * 0.7 + index) * 14),
-      })),
-    });
   }
 
   emitView() {
@@ -444,15 +420,23 @@ export class MapScene {
       boxMode: this.boxMode,
       autoRotate: this.autoRotate,
       timeMode: this.timeMode,
+      weather: this.weather,
+      pipeGhost: this.pipeGhost,
+      showGrid: this.layers.isVisible('grid'),
+      showRuler: this.showRuler,
+      forkliftSpeed: this.forkliftSpeed,
       measureHint: this.interaction?.measure.hint || '',
     });
   }
 
   onAlarmChange() {
+    const stats = this.alarms.getStats();
     this.world.syncGlow();
     this.world.refreshBulbs();
+    this.world.setFlowBoost(1 + stats.urgent * 0.18 + stats.warning * 0.08);
+    this.world.syncAlarmLinks(this.alarms.getRecords());
     this.refreshMarkers();
-    this.hooks.onStats?.(this.alarms.getStats());
+    this.hooks.onStats?.(stats);
     this.hooks.onAlarms?.(this.alarms.getRecords());
     if (this.selection?.kind === 'device' && this.selection.id) {
       const device = this.lookup.devices.get(this.selection.id);
@@ -463,8 +447,8 @@ export class MapScene {
   setLayer(name: LayerName, visible: boolean) {
     this.layers.setVisible(name, visible);
     if (name === 'alarm') this.world.setAlarmVisible(visible);
-    if (name === 'heat') this.heatVisible = visible;
     this.hooks.onLayers?.({ ...this.layers.state });
+    this.emitMode();
   }
 
   setRoamMode(mode: RoamMode) {
@@ -519,10 +503,54 @@ export class MapScene {
   setTimeOfDay(mode: TimeMode) {
     this.timeMode = mode;
     this.world.setTimeOfDay(mode);
-    this.map.setMapStyle(mode === 'night' ? 'amap://styles/darkblue' : 'amap://styles/whitesmoke');
+    this.applyMapStyle();
     this.world.highlight(this.selection);
     this.emitMode();
     if (this.selection?.kind === 'device') this.onAlarmChange();
+  }
+
+  setWeather(mode: WeatherMode) {
+    this.weather = mode;
+    this.world.setWeather(mode);
+    this.applyMapStyle();
+    this.emitMode();
+  }
+
+  setPipeGhost(enabled: boolean) {
+    this.pipeGhost = enabled;
+    this.world.setPipeGhost(enabled);
+    this.emitMode();
+  }
+
+  setRuler(enabled: boolean) {
+    this.showRuler = enabled;
+    this.world.setRuler(enabled);
+    this.emitMode();
+  }
+
+  setForkliftSpeed(scale: number) {
+    this.forkliftSpeed = scale;
+    this.world.forkliftSpeedScale = scale;
+    this.emitMode();
+  }
+
+  setAnnotation(text: string) {
+    this.interaction.setAnnotation(text);
+  }
+
+  captureView() {
+    return this.cameraCtrl.snapshot();
+  }
+
+  flyBookmark(view: { center: LngLat; zoom: number; pitch: number; rotation: number }) {
+    if (this.roamMode === 'fps') this.setRoamMode('free');
+    this.cameraCtrl.flyTo(view);
+  }
+
+  applyMapStyle() {
+    if (this.timeMode === 'night') this.map.setMapStyle('amap://styles/darkblue');
+    else if (this.weather === 'clear') this.map.setMapStyle('amap://styles/whitesmoke');
+    else this.map.setMapStyle('amap://styles/grey');
   }
 
   clearAlarms() {
@@ -556,7 +584,7 @@ export class MapScene {
   }
 
   resetView() {
-    this.flyPreset('global');
+    this.flyPreset('overview');
   }
 
   focusAlarm(deviceId: string) {
@@ -708,9 +736,10 @@ export class MapScene {
     if (target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
     if (this.roamMode === 'fps' && MOVE_KEYS.has(event.code)) event.preventDefault();
     if (event.repeat) return;
-    if (event.code === 'Digit1') this.flyPreset('global');
-    if (event.code === 'Digit2') this.flyPreset('building');
-    if (event.code === 'Digit3') this.flyPreset('gate');
+    if (event.code === 'Digit1') this.flyPreset('overview');
+    if (event.code === 'Digit2') this.flyPreset('workshop');
+    if (event.code === 'Digit3') this.flyPreset('hazard');
+    if (event.code === 'Digit4') this.flyPreset('gate');
     if (event.code === 'Digit0' || (event.code === 'KeyR' && this.roamMode !== 'fps')) this.resetView();
     if (event.code === 'KeyN') this.setTimeOfDay(this.timeMode === 'night' ? 'day' : 'night');
     if (event.code === 'KeyB') this.setBoxMode(!this.boxMode);

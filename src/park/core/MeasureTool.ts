@@ -1,6 +1,6 @@
-import type { AMapLngLat, AMapMap, AMapNamespace, AMapOverlay, OverlayGroup } from '../types/amap';
+import type { AMapLngLat, AMapMap, AMapNamespace, AMapOverlay, OverlayGroup } from '../../types/amap';
 import type { LngLat, MeasureMode } from '../types/park';
-import { formatArea, formatMeters, lngLatToMeters, ringArea } from '../utils/coord';
+import { formatArea, formatMeters, lngLatToMeters, ringArea } from '../../utils/coord';
 
 /**
  * 测量标注。图形全部放在高德 OverlayGroup 里，不写进建筑/设备网格，

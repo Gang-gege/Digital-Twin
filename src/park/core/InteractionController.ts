@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import type { AMapEvent, AMapMap, AMapNamespace, AMapPixel } from '../types/amap';
+import type { AMapEvent, AMapMap, AMapNamespace, AMapPixel } from '../../types/amap';
 import type { Building, Device, Gate, LngLat, MeasureMode, Pipe, PointerInfo, ResolvedHit } from '../types/park';
-import { lngLatToMeters } from '../utils/coord';
+import { lngLatToMeters } from '../../utils/coord';
 import { MeasureTool } from './MeasureTool';
 
 interface Lookup {

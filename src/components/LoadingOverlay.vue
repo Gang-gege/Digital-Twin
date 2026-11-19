@@ -6,23 +6,27 @@ const props = withDefaults(defineProps<{
   step?: number;
   text?: string;
   error?: string;
+  scene?: string;
 }>(), {
   step: 0,
   text: '',
   error: '',
+  scene: '场景',
 });
 
 const isKeyError = computed(() => /Key|密钥|\.env|白名单/.test(props.error));
 
-const steps = ['校验配置', '加载地图', '生成园区', '启动模拟'];
+const steps = computed(() => ['校验配置', '加载地图', `生成${props.scene}`, '启动模拟']);
+const progress = computed(() => Math.min(100, (props.step + 1) * 25));
 </script>
 
 <template>
   <div v-if="visible" class="loading-mask">
     <section v-if="!error" class="loading-card">
       <div class="spinner" />
-      <h2>正在构建数字孪生场景</h2>
+      <h2>正在构建{{ scene }}数字孪生</h2>
       <p>{{ text }}</p>
+      <div class="bar"><i :style="{ width: `${progress}%` }" /></div>
       <ol>
         <li v-for="(label, index) in steps" :key="label" :class="{ done: index < step, current: index === step }">
           {{ label }}

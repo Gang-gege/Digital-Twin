@@ -41,6 +41,7 @@ const emit = defineEmits<{
   'focus-alarm': [deviceId: string];
   'load-model': [file: File];
   'restore-model': [];
+  leave: [];
 }>();
 
 const onlineRate = computed(() => {
@@ -85,7 +86,10 @@ function onFile(event: Event) {
         <p>SMART PARK</p>
         <h1>星澜智慧园区</h1>
       </div>
-      <button class="icon-btn" title="收起面板" @click="emit('collapse')">〈</button>
+      <div class="brand-actions">
+        <button class="back" type="button" @click="emit('leave')">返回</button>
+        <button class="icon-btn" title="收起面板" @click="emit('collapse')">〈</button>
+      </div>
     </header>
 
     <section class="block">

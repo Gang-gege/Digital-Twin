@@ -1,4 +1,4 @@
-import type { LngLat } from './park';
+import type { LngLat } from './geo';
 
 export interface AMapLngLat {
   lng: number;

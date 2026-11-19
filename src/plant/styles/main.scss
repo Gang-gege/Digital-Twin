@@ -1,0 +1,14 @@
+@use "tokens" as *;
+@use "layout";
+@use "widgets";
+
+.plant-root {
+  width: 100%;
+  height: 100%;
+  color-scheme: dark;
+  font-family: $font;
+  background: $bg;
+  color: $text;
+  @include layout.root;
+  @include widgets.root;
+}

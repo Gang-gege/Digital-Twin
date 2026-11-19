@@ -1,6 +1,6 @@
 import { createApp } from 'vue';
 import App from './App.vue';
-import './styles/global.css';
+import './styles/base.scss';
 
 // 安全密钥必须在高德脚本加载之前挂到 window 上，Loader 会读取它。
 // Key 本身交给 AMapLoader.load({ key })，两处都只读环境变量，不写死在代码里。
@@ -10,7 +10,7 @@ window._AMapSecurityConfig = {
 
 const app = createApp(App);
 app.config.errorHandler = (err, _instance, info) => {
-  console.error('[星澜园区]', info, err);
+  console.error('[数字孪生]', info, err);
   const message = err instanceof Error ? err.message : String(err);
   window.dispatchEvent(new CustomEvent('park-error', { detail: message }));
 };

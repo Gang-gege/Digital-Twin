@@ -1,7 +1,7 @@
 import type { PerspectiveCamera } from 'three';
 import { Vector3 } from 'three';
 import type { AMapMap, CustomCoords } from '../types/amap';
-import type { LngLat } from '../types/park';
+import type { LngLat } from '../types/geo';
 
 /**
  * 坐标工具。

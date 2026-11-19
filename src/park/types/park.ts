@@ -1,13 +1,13 @@
 import type { Vector3 } from 'three';
+import type { LngLat, RoamMode } from '../../types/geo';
 
-export type LngLat = [number, number];
+export type { LngLat, RoamMode };
 export type MeterPoint = [number, number];
 export type DeviceType = 'camera' | 'charger' | 'access' | 'lamp';
 export type DeviceStatus = 'normal' | 'warning' | 'alarm';
 export type StatusKey = DeviceStatus | 'offline' | 'selected';
 export type LayerName = 'building' | 'device' | 'pipe' | 'alarm' | 'flyline' | 'heat' | 'measure';
 export type MeasureMode = 'none' | 'distance' | 'area' | 'elevation';
-export type RoamMode = 'free' | 'fps';
 export type TimeMode = 'day' | 'night';
 export type PresetName = 'global' | 'building' | 'gate';
 export type EntityKind = 'building' | 'device' | 'pipe' | 'gate';

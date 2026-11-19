@@ -1,5 +1,5 @@
 import type { AMapMap } from '../types/amap';
-import type { LngLat, RoamMode } from '../types/park';
+import type { LngLat, RoamMode } from '../types/geo';
 import { offsetMeters } from '../utils/coord';
 
 interface CameraState {
