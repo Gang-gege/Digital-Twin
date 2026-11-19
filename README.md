@@ -1,6 +1,6 @@
 # 星澜智慧园区 · 数字孪生 Demo
 
-一个用于学习 WebGL GIS 的前端演示：高德地图 JS API 2.0 的 `GLCustomLayer` 和 Three.js 共用同一块画布，底图和园区白模同步缩放、旋转、倾斜。没有后端，设备、告警、人流都是前端 mock。
+一个用于学习 WebGL GIS 的前端演示：Vue 3 + TypeScript，高德地图 JS API 2.0 的 `GLCustomLayer` 和 Three.js 共用同一块画布，底图和园区白模同步缩放、旋转、倾斜。没有后端，设备、告警、人流都是前端 mock。
 
 适合作为简历里的可视化项目。界面是深色指挥舱布局：左侧控制、右侧场景、底部状态。
 
@@ -8,21 +8,21 @@
 
 | 能力 | 在哪 |
 | --- | --- |
-| 共享 WebGL 上下文，相机每帧同步 | `src/core/MapScene.js`、`src/utils/coord.js` |
-| GCJ-02 转 Three 局部坐标，固定中心防漂移 | `src/utils/coord.js` |
+| 共享 WebGL 上下文，相机每帧同步 | `src/core/MapScene.ts`、`src/utils/coord.ts` |
+| GCJ-02 转 Three 局部坐标，固定中心防漂移 | `src/utils/coord.ts` |
 | 二维点位和三维对象互点定位 | `MapScene` 里的 CircleMarker / Text，配合拾取 |
-| 建筑白模、楼层线、道路、绿化、出入口 | `src/core/createWorld.js` |
-| 建筑 LOD，拉远后退化成盒子 | `createWorld.js` 的 `LOD_DISTANCE` |
-| 设备 InstancedMesh | `createWorld.js` `buildDevices` |
-| 地下管网 + GLSL 流动 | `src/shaders/materials.js` |
+| 建筑白模、楼层线、道路、绿化、出入口 | `src/core/createWorld.ts` |
+| 建筑 LOD，拉远后退化成盒子 | `createWorld.ts` 的 `LOD_DISTANCE` |
+| 设备 InstancedMesh | `createWorld.ts` `buildDevices` |
+| 地下管网 + GLSL 流动 | `src/shaders/materials.ts` |
 | 告警发光、闪烁 | 告警球壳着色器 + 实例颜色脉冲 |
-| 图层开关：建筑 / 设备 / 管网 / 告警，以及飞线、热力、标注 | `src/core/LayerManager.js` |
-| 单击拾取、框选 | `src/core/InteractionController.js` |
-| 自由漫游、第一人称、预设视角、环视、复位 | `src/core/CameraController.js` |
-| 测距、测面积、标高，标注独立图层 | `src/core/MeasureTool.js` |
-| 告警列表、统计、清除、重置 | `src/core/AlarmManager.js` |
-| 飞线、人流热力、昼夜和路灯 | `createWorld.js`、`MapScene.setTimeOfDay` |
-| GLB / GLTF 替换白模 | `src/core/ModelLoader.js` |
+| 图层开关：建筑 / 设备 / 管网 / 告警，以及飞线、热力、标注 | `src/core/LayerManager.ts` |
+| 单击拾取、框选 | `src/core/InteractionController.ts` |
+| 自由漫游、第一人称、预设视角、环视、复位 | `src/core/CameraController.ts` |
+| 测距、测面积、标高，标注独立图层 | `src/core/MeasureTool.ts` |
+| 告警列表、统计、清除、重置 | `src/core/AlarmManager.ts` |
+| 飞线、人流热力、昼夜和路灯 | `createWorld.ts`、`MapScene.setTimeOfDay` |
+| GLB / GLTF 替换白模 | `src/core/ModelLoader.ts` |
 | 加载动画、完成提示、错误说明 | `src/components/LoadingOverlay.vue` |
 
 ## 相机为什么能和底图贴在一起
@@ -62,7 +62,7 @@ VITE_AMAP_KEY=你的Web端JSAPIKey
 VITE_AMAP_SECURITY_JS_CODE=你的安全密钥
 ```
 
-Key 不要写进源码，也不要提交 `.env`。安全密钥要在加载高德脚本之前挂到 `window._AMapSecurityConfig`，这件事在 `src/main.js` 里完成。
+Key 不要写进源码，也不要提交 `.env`。安全密钥要在加载高德脚本之前挂到 `window._AMapSecurityConfig`，这件事在 `src/main.ts` 里完成。
 
 然后：
 
@@ -86,14 +86,16 @@ npm run preview
 1. 打开 [高德开放平台控制台](https://console.amap.com/dev/key/app) 并登录。
 2. 创建应用，添加 Key，服务平台选择 **Web端(JS API)**。
 3. 记下 Key，以及 Key 旁边的 **安全密钥**。
-4. 域名白名单至少包含 `localhost`、`127.0.0.1`。上线后再加正式域名。
+4. 域名白名单可以留空。如果要填，只写域名本身，例如 `localhost`，不要带 `http://`、端口或结尾的 `/`。
 5. 写入 `.env` 后重启 `npm run dev`。改环境变量不会热更新。
 
 ## 目录和模块
 
 ```text
 src
-├─ main.js                         安全密钥、Vue 入口、全局错误
+├─ main.ts                         安全密钥、Vue 入口、全局错误
+├─ vite-env.d.ts                   环境变量和 window 类型
+├─ types                           园区领域类型、高德调用面类型
 ├─ App.vue                         布局：左面板、场景、状态栏、加载层
 ├─ components
 │  ├─ ControlPanel.vue             统计、图层、工具、告警列表
@@ -101,20 +103,20 @@ src
 │  ├─ StatusBar.vue                坐标、姿态、LOD、时间
 │  └─ LoadingOverlay.vue           加载动画和失败说明
 ├─ core
-│  ├─ MapScene.js                  地图、GLCustomLayer、总调度
-│  ├─ createWorld.js               白模、设备、管网、飞线、光照
-│  ├─ LayerManager.js              图层显隐
-│  ├─ AlarmManager.js              告警定时模拟
-│  ├─ InteractionController.js     拾取和框选
-│  ├─ MeasureTool.js               测量标注（独立覆盖物组）
-│  ├─ CameraController.js          飞行、环视、第一人称
-│  └─ ModelLoader.js               GLTF/GLB 适配到建筑占地
-├─ shaders/materials.js            管线流动、飞线、告警发光
-├─ mock/parkData.js                全部模拟数据
+│  ├─ MapScene.ts                  地图、GLCustomLayer、总调度
+│  ├─ createWorld.ts               白模、设备、管网、飞线、光照
+│  ├─ LayerManager.ts              图层显隐
+│  ├─ AlarmManager.ts              告警定时模拟
+│  ├─ InteractionController.ts     拾取和框选
+│  ├─ MeasureTool.ts               测量标注（独立覆盖物组）
+│  ├─ CameraController.ts          飞行、环视、第一人称
+│  └─ ModelLoader.ts               GLTF/GLB 适配到建筑占地
+├─ shaders/materials.ts            管线流动、飞线、告警发光
+├─ mock/parkData.ts                全部模拟数据
 └─ utils
-   ├─ coord.js                     GCJ-02 与局部坐标
-   ├─ render.js                    几何体、道路带、窗户、释放资源
-   └─ present.js                   信息面板字段
+   ├─ coord.ts                     GCJ-02 与局部坐标
+   ├─ render.ts                    几何体、道路带、窗户、释放资源
+   └─ present.ts                   信息面板字段
 ```
 
 每个核心文件顶部都有注释，说明这个类负责什么、和地图相机的关系是什么。

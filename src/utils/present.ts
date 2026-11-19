@@ -1,6 +1,7 @@
-import { DEVICE_TYPES } from '../mock/parkData.js';
+import { DEVICE_TYPES } from '../mock/parkData';
+import type { Building, Device, DeviceType, Gate, Pipe, SelectionPayload, StatusKey } from '../types/park';
 
-export const STATUS_HEX = {
+export const STATUS_HEX: Record<StatusKey, string> = {
   normal: '#2fce8a',
   warning: '#f5c451',
   alarm: '#ff5b6a',
@@ -8,17 +9,17 @@ export const STATUS_HEX = {
   selected: '#38bdf8',
 };
 
-export function statusKey(device) {
+export function statusKey(device: Device): StatusKey {
   if (!device.online) return 'offline';
   return device.status || 'normal';
 }
 
-export function statusLabel(device) {
-  const map = { normal: '正常', warning: '预警', alarm: '告警', offline: '离线' };
+export function statusLabel(device: Device) {
+  const map: Record<StatusKey, string> = { normal: '正常', warning: '预警', alarm: '告警', offline: '离线', selected: '选中' };
   return map[statusKey(device)];
 }
 
-function coordRows(lng, lat, east, north) {
+function coordRows(lng: number, lat: number, east: number, north: number) {
   return [
     { label: '经度', value: lng.toFixed(6) },
     { label: '纬度', value: lat.toFixed(6) },
@@ -27,14 +28,14 @@ function coordRows(lng, lat, east, north) {
   ];
 }
 
-function clock(ts) {
+function clock(ts: number) {
   const date = new Date(ts);
-  const p = (n) => String(n).padStart(2, '0');
+  const p = (n: number) => String(n).padStart(2, '0');
   return `${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`;
 }
 
 /** 把拾取结果整理成信息面板可以直接渲染的结构。 */
-export function presentBuilding(building) {
+export function presentBuilding(building: Building): SelectionPayload {
   return {
     kind: 'building',
     id: building.id,
@@ -54,7 +55,7 @@ export function presentBuilding(building) {
   };
 }
 
-export function presentDevice(device) {
+export function presentDevice(device: Device): SelectionPayload {
   const meta = DEVICE_TYPES[device.type];
   return {
     kind: 'device',
@@ -80,7 +81,7 @@ export function presentDevice(device) {
   };
 }
 
-export function presentPipe(pipe) {
+export function presentPipe(pipe: Pipe): SelectionPayload {
   return {
     kind: 'pipe',
     id: pipe.id,
@@ -101,7 +102,7 @@ export function presentPipe(pipe) {
   };
 }
 
-export function presentGate(gate) {
+export function presentGate(gate: Gate): SelectionPayload {
   return {
     kind: 'gate',
     id: gate.id,
@@ -117,28 +118,28 @@ export function presentGate(gate) {
   };
 }
 
-export function presentMulti(devices) {
-  const counter = {};
-  devices.forEach((device) => {
+export function presentMulti(list: Device[]): SelectionPayload {
+  const counter: Partial<Record<DeviceType, number>> = {};
+  list.forEach((device) => {
     counter[device.type] = (counter[device.type] || 0) + 1;
   });
   return {
     kind: 'multi',
     id: null,
-    title: `已框选 ${devices.length} 个设备`,
+    title: `已框选 ${list.length} 个设备`,
     subtitle: '点击条目飞到该设备',
     badge: '批量',
     level: 'selected',
     rows: Object.entries(counter).map(([type, count]) => ({
-      label: DEVICE_TYPES[type].label,
+      label: DEVICE_TYPES[type as DeviceType].label,
       value: `${count} 个`,
     })),
-    items: devices.map((device) => ({
+    items: list.map((device) => ({
       id: device.id,
       name: device.name,
       status: statusLabel(device),
       level: statusKey(device),
     })),
-    ids: devices.map((device) => device.id),
+    ids: list.map((device) => device.id),
   };
 }

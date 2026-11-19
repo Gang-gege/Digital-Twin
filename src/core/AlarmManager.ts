@@ -1,12 +1,19 @@
-import { alarmText, DEVICE_TYPES } from '../mock/parkData.js';
-import { statusKey } from '../utils/present.js';
+import { alarmText, DEVICE_TYPES } from '../mock/parkData';
+import type { AlarmLevel, AlarmRecord, Device, DeviceStatus, ParkStats } from '../types/park';
+import { statusKey } from '../utils/present';
 
 /**
  * 告警模拟。没有后端，用定时器随机升降设备状态。
  * 正常绿、预警黄、告警红；离线单独统计，不进入告警列表。
  */
 export class AlarmManager {
-  constructor(devices, onChange) {
+  declare devices: Device[];
+  declare onChange: (() => void) | undefined;
+  declare records: AlarmRecord[];
+  declare seq: number;
+  declare timer: number;
+
+  constructor(devices: Device[], onChange?: () => void) {
     this.devices = devices;
     this.onChange = onChange;
     this.records = [];
@@ -61,7 +68,7 @@ export class AlarmManager {
     this.emit();
   }
 
-  getStats() {
+  getStats(): ParkStats {
     const stats = { total: this.devices.length, online: 0, offline: 0, warning: 0, alarm: 0 };
     this.devices.forEach((device) => {
       if (device.online) stats.online += 1;
@@ -94,7 +101,8 @@ export class AlarmManager {
     const pool = this.devices.filter((device) => device.online && device.status === 'normal');
     if (!pool.length) return;
     const device = pool[Math.floor(Math.random() * pool.length)];
-    const level = Math.random() < 0.35 ? 'alarm' : 'warning';
+    if (!device) return;
+    const level: AlarmLevel = Math.random() < 0.35 ? 'alarm' : 'warning';
     device.status = level;
     if (level === 'alarm') device.telemetry.temperature = Math.max(device.telemetry.temperature, 68);
     this.upsert(device, level, alarmText(device.type, level));
@@ -127,6 +135,7 @@ export class AlarmManager {
     const offline = this.devices.filter((device) => !device.online);
     if (offline.length && Math.random() < 0.6) {
       const device = offline[Math.floor(Math.random() * offline.length)];
+      if (!device) return;
       device.online = true;
       device.status = 'normal';
       return;
@@ -134,22 +143,23 @@ export class AlarmManager {
     const online = this.devices.filter((device) => device.online && device.status === 'normal');
     if (!online.length || offline.length >= 4) return;
     const device = online[Math.floor(Math.random() * online.length)];
+    if (!device) return;
     device.online = false;
     device.status = 'normal';
     this.records = this.records.filter((record) => record.deviceId !== device.id);
   }
 
-  pickStatus(status) {
+  pickStatus(status: DeviceStatus) {
     const pool = this.devices.filter((device) => device.online && device.status === status);
     if (!pool.length) return null;
-    return pool[Math.floor(Math.random() * pool.length)];
+    return pool[Math.floor(Math.random() * pool.length)] || null;
   }
 
   activeCount() {
     return this.devices.filter((device) => device.online && device.status !== 'normal').length;
   }
 
-  upsert(device, level, message) {
+  upsert(device: Device, level: AlarmLevel, message: string) {
     const found = this.records.find((record) => record.deviceId === device.id);
     if (found) {
       found.level = level;
@@ -163,7 +173,7 @@ export class AlarmManager {
     if (this.records.length > 40) this.records.pop();
   }
 
-  makeRecord(device, level, message) {
+  makeRecord(device: Device, level: AlarmLevel, message: string): AlarmRecord {
     const time = Date.now();
     return {
       id: `AL-${this.seq += 1}`,
@@ -184,8 +194,8 @@ export class AlarmManager {
   }
 }
 
-function formatTime(ts) {
+function formatTime(ts: number) {
   const date = new Date(ts);
-  const p = (n) => String(n).padStart(2, '0');
+  const p = (n: number) => String(n).padStart(2, '0');
   return `${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`;
 }

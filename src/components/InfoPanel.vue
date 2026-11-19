@@ -1,8 +1,13 @@
-<script setup>
-defineProps({
-  payload: { type: Object, default: null },
-});
-defineEmits(['close', 'focus']);
+<script setup lang="ts">
+import type { SelectionPayload } from '../types/park';
+
+defineProps<{
+  payload: SelectionPayload | null;
+}>();
+defineEmits<{
+  close: [];
+  focus: [id: string];
+}>();
 </script>
 
 <template>

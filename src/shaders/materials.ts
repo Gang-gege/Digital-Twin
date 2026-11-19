@@ -10,7 +10,7 @@ import * as THREE from 'three';
  * instanceMatrix / instanceColor，这里不要再声明一遍，否则会编译失败。
  */
 
-export function createFlowMaterial(color, speed) {
+export function createFlowMaterial(color: string, speed: number) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
@@ -49,7 +49,7 @@ export function createFlowMaterial(color, speed) {
   });
 }
 
-export function createFlyLineMaterial(color) {
+export function createFlyLineMaterial(color: string) {
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
@@ -126,7 +126,7 @@ export function createAlarmGlowMaterial() {
 }
 
 /** 收集需要每帧写入 uTime 的材质。 */
-export function trackTime(list, material) {
-  if (material?.uniforms?.uTime) list.push(material);
+export function trackTime(list: THREE.ShaderMaterial[], material: THREE.ShaderMaterial) {
+  if (material.uniforms.uTime) list.push(material);
   return material;
 }

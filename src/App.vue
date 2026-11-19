@@ -1,25 +1,36 @@
-<script setup>
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import ControlPanel from './components/ControlPanel.vue';
 import InfoPanel from './components/InfoPanel.vue';
 import LoadingOverlay from './components/LoadingOverlay.vue';
 import StatusBar from './components/StatusBar.vue';
-import { MapScene } from './core/MapScene.js';
+import { MapScene } from './core/MapScene';
+import type {
+  AlarmFilter,
+  AlarmRecord,
+  LayerName,
+  LayerState,
+  ParkStats,
+  PointerInfo,
+  SceneMode,
+  SelectionPayload,
+  ViewInfo,
+} from './types/park';
 
-const mapRef = ref(null);
+const mapRef = ref<HTMLElement | null>(null);
 const collapsed = ref(false);
 const loading = ref(true);
 const loadStep = ref(0);
 const loadText = ref('正在启动');
 const errorText = ref('');
 const toast = ref('');
-const alarmFilter = ref('all');
-const selection = ref(null);
+const alarmFilter = ref<AlarmFilter>('all');
+const selection = ref<SelectionPayload | null>(null);
 const clock = ref('');
 
-const stats = reactive({ total: 0, online: 0, offline: 0, warning: 0, alarm: 0 });
-const alarms = ref([]);
-const layers = reactive({
+const stats = reactive<ParkStats>({ total: 0, online: 0, offline: 0, warning: 0, alarm: 0 });
+const alarms = ref<AlarmRecord[]>([]);
+const layers = reactive<LayerState>({
   building: true,
   device: true,
   pipe: true,
@@ -28,7 +39,7 @@ const layers = reactive({
   heat: false,
   measure: true,
 });
-const mode = reactive({
+const mode = reactive<SceneMode>({
   roamMode: 'free',
   measureMode: 'none',
   boxMode: false,
@@ -36,17 +47,17 @@ const mode = reactive({
   timeMode: 'day',
   measureHint: '',
 });
-const view = reactive({ zoom: 16.6, pitch: 54, rotation: -28, lod: '近景精细' });
-const pointer = reactive({ lng: null, lat: null, east: null, north: null, hover: '' });
+const view = reactive<ViewInfo>({ zoom: 16.6, pitch: 54, rotation: -28, lod: '近景精细' });
+const pointer = reactive<PointerInfo>({ lng: null, lat: null, east: null, north: null, hover: '' });
 
 const alarmCount = computed(() => stats.warning + stats.alarm);
 const customModel = computed(() => Boolean(selection.value?.custom));
 
-let sceneApi = null;
+let sceneApi: MapScene | null = null;
 let toastTimer = 0;
 let clockTimer = 0;
 
-function showToast(text) {
+function showToast(text: string) {
   toast.value = text;
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => {
@@ -56,18 +67,20 @@ function showToast(text) {
 
 function tickClock() {
   const date = new Date();
-  const p = (n) => String(n).padStart(2, '0');
+  const p = (n: number) => String(n).padStart(2, '0');
   clock.value = `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`;
 }
 
-function onParkError(event) {
-  if (!loading.value) showToast(event.detail || '页面脚本异常');
+function onParkError(event: Event) {
+  const detail = event instanceof CustomEvent ? String(event.detail || '') : '';
+  if (!loading.value) showToast(detail || '页面脚本异常');
 }
 
 onMounted(async () => {
   tickClock();
   clockTimer = window.setInterval(tickClock, 1000);
   window.addEventListener('park-error', onParkError);
+  if (!mapRef.value) return;
   sceneApi = new MapScene(mapRef.value, {
     onLoading: ({ step, text }) => {
       loadStep.value = step;
@@ -104,7 +117,7 @@ onBeforeUnmount(() => {
   sceneApi = null;
 });
 
-function layerToggle({ name, visible }) {
+function layerToggle({ name, visible }: { name: LayerName; visible: boolean }) {
   sceneApi?.setLayer(name, visible);
 }
 </script>

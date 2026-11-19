@@ -1,4 +1,13 @@
-import { offsetMeters } from '../utils/coord.js';
+import type { AMapMap } from '../types/amap';
+import type { LngLat, RoamMode } from '../types/park';
+import { offsetMeters } from '../utils/coord';
+
+interface CameraState {
+  center: LngLat;
+  zoom: number;
+  pitch: number;
+  rotation: number;
+}
 
 /**
  * 视角控制：预设飞行、复位、自动环视、第一人称巡检。
@@ -8,7 +17,27 @@ import { offsetMeters } from '../utils/coord.js';
  * 屏幕向上的地理方位是 -rotation，所以前进量是东 = -sin(rotation)，北 = cos(rotation)。
  */
 export class CameraController {
-  constructor(map, dom) {
+  declare map: AMapMap;
+  declare dom: HTMLElement;
+  declare keys: Set<string>;
+  declare mode: RoamMode;
+  declare flying: boolean;
+  declare userHolding: boolean;
+  declare holdOffUntil: number;
+  declare lookDrag: boolean;
+  declare lastX: number;
+  declare lastY: number;
+  declare flyRaf: number;
+  declare onModeExit: (() => void) | null;
+  declare onKeyDown: (event: KeyboardEvent) => void;
+  declare onKeyUp: (event: KeyboardEvent) => void;
+  declare onBlur: () => void;
+  declare onMouseDown: (event: MouseEvent) => void;
+  declare onMouseUp: () => void;
+  declare onMouseMove: (event: MouseEvent) => void;
+  declare onLockChange: () => void;
+
+  constructor(map: AMapMap, dom: HTMLElement) {
     this.map = map;
     this.dom = dom;
     this.keys = new Set();
@@ -71,7 +100,7 @@ export class CameraController {
     if (document.pointerLockElement === this.dom) document.exitPointerLock();
   }
 
-  snapshot() {
+  snapshot(): CameraState {
     const center = this.map.getCenter();
     return {
       center: [center.lng, center.lat],
@@ -81,14 +110,14 @@ export class CameraController {
     };
   }
 
-  apply(state) {
+  apply(state: CameraState) {
     this.map.setZoom(state.zoom, true);
     this.map.setPitch(clamp(state.pitch, 0, 80), true);
     this.map.setRotation(norm(state.rotation), true);
     this.map.setCenter(state.center, true);
   }
 
-  flyTo(target, duration = 1000) {
+  flyTo(target: CameraState, duration = 1000) {
     this.cancelFly();
     const from = this.snapshot();
     const to = {
@@ -99,7 +128,7 @@ export class CameraController {
     };
     const start = performance.now();
     this.flying = true;
-    const step = (now) => {
+    const step = (now: number) => {
       const raw = Math.min(1, (now - start) / duration);
       const k = raw * raw * (3 - 2 * raw);
       this.apply({
@@ -123,7 +152,7 @@ export class CameraController {
     this.flying = false;
   }
 
-  setMode(mode) {
+  setMode(mode: RoamMode) {
     this.mode = mode;
     this.keys.clear();
     if (mode === 'fps') {
@@ -135,7 +164,7 @@ export class CameraController {
   }
 
   /** 鼠标按下时暂停环视，避免和用户拖拽抢镜头。 */
-  hold(active) {
+  hold(active: boolean) {
     this.userHolding = active;
     if (!active) this.holdOffUntil = performance.now() + 1200;
   }
@@ -145,10 +174,10 @@ export class CameraController {
   }
 
   /**
-   * @param {number} dt 秒
-   * @param {boolean} autoRotate 是否环视
+   * @param dt 秒
+   * @param autoRotate 是否环视
    */
-  update(dt, autoRotate) {
+  update(dt: number, autoRotate: boolean) {
     if (autoRotate && this.mode === 'free' && !this.blocked()) {
       this.map.setRotation(norm(this.map.getRotation() + 6 * dt), true);
     }
@@ -169,7 +198,7 @@ export class CameraController {
     this.map.setCenter(offsetMeters([center.lng, center.lat], east, north), true);
   }
 
-  look(event) {
+  look(event: MouseEvent) {
     if (this.mode !== 'fps') return;
     const locked = document.pointerLockElement === this.dom;
     if (!locked && !this.lookDrag) return;
@@ -185,20 +214,21 @@ export class CameraController {
   }
 }
 
-function isTyping(event) {
-  const tag = event.target?.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA';
+function isTyping(event: KeyboardEvent) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return false;
+  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
 }
 
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function norm(angle) {
+function norm(angle: number) {
   return ((angle % 360) + 360) % 360;
 }
 
-function lerpAngle(from, to, t) {
+function lerpAngle(from: number, to: number, t: number) {
   const delta = ((to - from + 540) % 360) - 180;
   return from + delta * t;
 }

@@ -1,35 +1,47 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue';
-import { PIPE_LEGEND } from '../mock/parkData.js';
+import { PIPE_LEGEND } from '../mock/parkData';
+import type {
+  AlarmFilter,
+  AlarmRecord,
+  LayerName,
+  LayerState,
+  MeasureMode,
+  ParkStats,
+  PresetName,
+  RoamMode,
+  SceneMode,
+  TimeMode,
+} from '../types/park';
 
-const props = defineProps({
-  collapsed: Boolean,
-  stats: { type: Object, required: true },
-  alarms: { type: Array, required: true },
-  alarmFilter: { type: String, required: true },
-  layers: { type: Object, required: true },
-  mode: { type: Object, required: true },
-  customModel: Boolean,
-});
+const props = defineProps<{
+  collapsed: boolean;
+  stats: ParkStats;
+  alarms: AlarmRecord[];
+  alarmFilter: AlarmFilter;
+  layers: LayerState;
+  mode: SceneMode;
+  customModel: boolean;
+}>();
 
-const emit = defineEmits([
-  'collapse',
-  'layer',
-  'preset',
-  'reset-view',
-  'roam',
-  'auto-rotate',
-  'measure',
-  'clear-measure',
-  'box',
-  'time',
-  'clear-alarms',
-  'reset-devices',
-  'filter',
-  'focus-alarm',
-  'load-model',
-  'restore-model',
-]);
+const emit = defineEmits<{
+  collapse: [];
+  layer: [payload: { name: LayerName; visible: boolean }];
+  preset: [name: PresetName];
+  'reset-view': [];
+  roam: [mode: RoamMode];
+  'auto-rotate': [enabled: boolean];
+  measure: [mode: MeasureMode];
+  'clear-measure': [];
+  box: [enabled: boolean];
+  time: [mode: TimeMode];
+  'clear-alarms': [];
+  'reset-devices': [];
+  filter: [filter: AlarmFilter];
+  'focus-alarm': [deviceId: string];
+  'load-model': [file: File];
+  'restore-model': [];
+}>();
 
 const onlineRate = computed(() => {
   if (!props.stats.total) return 0;
@@ -47,7 +59,7 @@ const filterCount = computed(() => ({
   alarm: props.alarms.filter((item) => item.level === 'alarm').length,
 }));
 
-const layerItems = [
+const layerItems: Array<[LayerName, string]> = [
   ['building', '建筑层'],
   ['device', '设备层'],
   ['pipe', '管网层'],
@@ -57,10 +69,12 @@ const layerItems = [
   ['measure', '测量标注'],
 ];
 
-function onFile(event) {
-  const file = event.target.files?.[0];
+function onFile(event: Event) {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement)) return;
+  const file = input.files?.[0];
   if (file) emit('load-model', file);
-  event.target.value = '';
+  input.value = '';
 }
 </script>
 

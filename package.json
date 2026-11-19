@@ -3,20 +3,24 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "智慧园区数字孪生可视化 Demo（Vue3 + Vite + 高德 JS API 2.0 + GLCustomLayer + Three.js）",
+  "description": "智慧园区数字孪生可视化 Demo（Vue 3 + TypeScript + Vite + 高德 JS API 2.0 + GLCustomLayer + Three.js）",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
     "@amap/amap-jsapi-loader": "^1.0.1",
-    "three": "^0.162.0",
+    "three": "0.162.0",
     "vue": "^3.5.13"
   },
   "devDependencies": {
+    "@types/three": "^0.162.0",
     "@vitejs/plugin-vue": "^5.2.1",
-    "vite": "^6.0.7"
+    "typescript": "^6.0.3",
+    "vite": "^6.0.7",
+    "vue-tsc": "^3.3.14"
   },
   "engines": {
     "node": ">=18"

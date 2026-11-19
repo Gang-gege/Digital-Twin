@@ -11,6 +11,7 @@ window._AMapSecurityConfig = {
 const app = createApp(App);
 app.config.errorHandler = (err, _instance, info) => {
   console.error('[星澜园区]', info, err);
-  window.dispatchEvent(new CustomEvent('park-error', { detail: err?.message || String(err) }));
+  const message = err instanceof Error ? err.message : String(err);
+  window.dispatchEvent(new CustomEvent('park-error', { detail: message }));
 };
 app.mount('#app');

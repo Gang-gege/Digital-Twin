@@ -1,4 +1,18 @@
-import { metersToLngLat, polylineLength } from '../utils/coord.js';
+import { metersToLngLat, polylineLength } from '../utils/coord';
+import type {
+  Building,
+  Device,
+  DeviceStatus,
+  DeviceType,
+  Gate,
+  Green,
+  HeatPoint,
+  LngLat,
+  MeterPoint,
+  Pipe,
+  PresetName,
+  Road,
+} from '../types/park';
 
 /**
  * 园区 mock 数据。
@@ -7,10 +21,10 @@ import { metersToLngLat, polylineLength } from '../utils/coord.js';
  */
 
 export const PARK_NAME = '星澜智慧园区';
-export const PARK_CENTER = [116.5068, 39.7955];
+export const PARK_CENTER: LngLat = [116.5068, 39.7955];
 export const FLOOR_HEIGHT = 3.2;
 
-export const DEVICE_TYPES = {
+export const DEVICE_TYPES: Record<DeviceType, { label: string; metric: string; unit: string }> = {
   camera: { label: '摄像头', metric: '码率', unit: 'Mbps' },
   charger: { label: '充电桩', metric: '功率', unit: 'kW' },
   access: { label: '门禁', metric: '通行', unit: '次/时' },
@@ -24,7 +38,7 @@ export const PIPE_LEGEND = [
   { name: '污水', color: '#c08457' },
 ];
 
-export const USAGE_COLOR = {
+const USAGE_COLOR: Record<string, string> = {
   研发办公: '#d7e4f5',
   实验: '#d5e7ea',
   数据机房: '#d3dced',
@@ -36,25 +50,25 @@ export const USAGE_COLOR = {
   商业: '#f0e6dc',
 };
 
-const ALARM_TEXT = {
+const ALARM_TEXT: Record<DeviceType, { warning: string; alarm: string }> = {
   camera: { warning: '画面遮挡', alarm: '视频信号丢失' },
   charger: { warning: '温度偏高', alarm: '过温保护触发' },
   access: { warning: '多次验权失败', alarm: '强行开门' },
   lamp: { warning: '光源衰减', alarm: '灯具故障' },
 };
 
-export function alarmText(type, level) {
+export function alarmText(type: DeviceType, level: 'warning' | 'alarm') {
   return ALARM_TEXT[type]?.[level] || '状态异常';
 }
 
-function zoneOf(x, y) {
+function zoneOf(x: number, y: number) {
   if (Math.hypot(x, y) < 70) return '中心区';
   const ns = y >= 0 ? '北' : '南';
   const ew = x >= 0 ? '东' : '西';
   return `${ns}${ew}区`;
 }
 
-function locate(item) {
+function locate<T extends { x: number; y: number; zone?: string }>(item: T): T & { lng: number; lat: number; zone: string } {
   const [lng, lat] = metersToLngLat(PARK_CENTER, item.x, item.y);
   return { ...item, lng, lat, zone: item.zone || zoneOf(item.x, item.y) };
 }
@@ -74,19 +88,19 @@ const BUILDING_DEFS = [
   { id: 'B12', name: '访客中心', usage: '配套', x: 46, y: -168, w: 22, d: 12, floors: 2 },
 ];
 
-export const buildings = BUILDING_DEFS.map((item) => locate({
+export const buildings: Building[] = BUILDING_DEFS.map((item) => locate({
   ...item,
   height: item.floors * FLOOR_HEIGHT,
   color: USAGE_COLOR[item.usage] || '#dce5f0',
 }));
 
-export const gates = [
+export const gates: Gate[] = [
   { id: 'G-S', name: '南门主入口', x: 0, y: -200 },
   { id: 'G-E', name: '东门', x: 230, y: 0 },
   { id: 'G-W', name: '西门', x: -230, y: 0 },
 ].map((item) => locate(item));
 
-export const roads = [
+export const roads: Road[] = [
   { id: 'R-EW', name: '纬一路', width: 11, points: [[-240, 0], [240, 0]] },
   { id: 'R-NS', name: '经一路', width: 11, points: [[0, -210], [0, 210]] },
   {
@@ -97,7 +111,7 @@ export const roads = [
   },
 ];
 
-export const greens = [
+export const greens: Green[] = [
   { id: 'GR-N', name: '北侧林带', points: [[-220, 158], [-190, 208], [-60, 208], [-40, 162]] },
   { id: 'GR-E', name: '东北绿地', points: [[198, 145], [242, 145], [242, 205], [198, 205]] },
   { id: 'GR-SW', name: '西南草坪', points: [[-236, -192], [-168, -192], [-168, -164], [-236, -164]] },
@@ -106,8 +120,8 @@ export const greens = [
   { id: 'GR-SE', name: '东南绿地', points: [[145, -125], [220, -125], [220, -82], [145, -82]] },
 ];
 
-function makePipe(def) {
-  const mid = def.path[Math.floor((def.path.length - 1) / 2)];
+function makePipe(def: Omit<Pipe, 'mid' | 'lng' | 'lat' | 'length'>): Pipe {
+  const mid = def.path[Math.floor((def.path.length - 1) / 2)] ?? def.path[0] ?? [0, 0];
   const [lng, lat] = metersToLngLat(PARK_CENTER, mid[0], mid[1]);
   return {
     ...def,
@@ -118,7 +132,7 @@ function makePipe(def) {
   };
 }
 
-export const pipes = [
+export const pipes: Pipe[] = [
   makePipe({
     id: 'PIPE-JS-01',
     name: '纬一路给水管',
@@ -169,28 +183,28 @@ export const pipes = [
   }),
 ];
 
-const BOUNDARY = [[-250, -220], [250, -220], [250, 220], [-250, 220], [-250, -220]];
+const BOUNDARY: MeterPoint[] = [[-250, -220], [250, -220], [250, 220], [-250, 220], [-250, -220]];
 export const boundary = BOUNDARY;
 
-function insideBuilding(x, y) {
+function insideBuilding(x: number, y: number) {
   return buildings.some((b) => Math.abs(x - b.x) < b.w / 2 + 1.2 && Math.abs(y - b.y) < b.d / 2 + 1.2);
 }
 
-function samples(a, b, step, side) {
+function samples(a: MeterPoint, b: MeterPoint, step: number, side: number): MeterPoint[] {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
   const len = Math.hypot(dx, dy);
   if (len < step) return [];
   const ux = dx / len;
   const uy = dy / len;
-  const points = [];
+  const points: MeterPoint[] = [];
   for (let dist = step * 0.55; dist < len - step * 0.3; dist += step) {
     points.push([a[0] + ux * dist - uy * side, a[1] + uy * dist + ux * side]);
   }
   return points;
 }
 
-function metricSeed(type, index) {
+function metricSeed(type: DeviceType, index: number) {
   if (type === 'camera') return 2.4 + (index % 5) * 0.8;
   if (type === 'charger') return 18 + (index % 6) * 14;
   if (type === 'access') return 4 + (index % 7) * 3;
@@ -198,21 +212,21 @@ function metricSeed(type, index) {
 }
 
 let deviceSeq = 0;
-function makeDevice(type, x, y, extra = {}) {
+function makeDevice(type: DeviceType, x: number, y: number, extra: { buildingId?: string; key?: boolean } = {}): Device {
   deviceSeq += 1;
   const meta = DEVICE_TYPES[type];
-  const prefix = { camera: 'CAM', charger: 'CHG', access: 'ACS', lamp: 'LMP' }[type];
-  const id = `${prefix}-${String(deviceSeq).padStart(2, '0')}`;
-  const elev = { camera: 3.3, charger: 1.6, access: 1.5, lamp: 6.3 }[type];
+  const prefix: Record<DeviceType, string> = { camera: 'CAM', charger: 'CHG', access: 'ACS', lamp: 'LMP' };
+  const id = `${prefix[type]}-${String(deviceSeq).padStart(2, '0')}`;
+  const elev: Record<DeviceType, number> = { camera: 3.3, charger: 1.6, access: 1.5, lamp: 6.3 };
   return locate({
     id,
     type,
     name: `${meta.label} ${id}`,
     x,
     y,
-    elev,
+    elev: elev[type],
     online: true,
-    status: 'normal',
+    status: 'normal' as DeviceStatus,
     buildingId: extra.buildingId || '',
     key: Boolean(extra.key),
     telemetry: {
@@ -224,7 +238,7 @@ function makeDevice(type, x, y, extra = {}) {
 }
 
 function buildDevices() {
-  const list = [];
+  const list: Device[] = [];
 
   buildings.forEach((b) => {
     const y = b.y - b.d / 2 - 2.8;
@@ -232,14 +246,14 @@ function buildDevices() {
     list.push(makeDevice('access', b.x + 2.4, y, { buildingId: b.id, key: b.id === 'B04' || b.id === 'B07' }));
   });
 
-  const corners = [[-216, -188], [216, -188], [216, 188], [-216, 188]];
+  const corners: MeterPoint[] = [[-216, -188], [216, -188], [216, 188], [-216, 188]];
   corners.forEach(([x, y]) => list.push(makeDevice('camera', x, y)));
 
   list.push(makeDevice('camera', 10, -190));
   list.push(makeDevice('camera', 218, 10));
   list.push(makeDevice('camera', -218, -10));
   gates.forEach((gate) => {
-    const shift = gate.id === 'G-S' ? [0, 3] : [0, 4];
+    const shift: MeterPoint = gate.id === 'G-S' ? [0, 3] : [0, 4];
     list.push(makeDevice('access', gate.x + shift[0], gate.y + shift[1], { key: gate.id === 'G-S' }));
   });
 
@@ -249,12 +263,15 @@ function buildDevices() {
     }
   }
 
-  const lampPoints = [];
+  const lampPoints: MeterPoint[] = [];
   roads.forEach((road) => {
     const step = road.id === 'R-RING' ? 72 : 36;
     const side = road.id === 'R-RING' ? 8 : 8;
     for (let i = 0; i < road.points.length - 1; i += 1) {
-      samples(road.points[i], road.points[i + 1], step, side).forEach((p) => lampPoints.push(p));
+      const start = road.points[i];
+      const end = road.points[i + 1];
+      if (!start || !end) continue;
+      samples(start, end, step, side).forEach((p) => lampPoints.push(p));
     }
   });
   lampPoints.forEach(([x, y]) => {
@@ -266,10 +283,10 @@ function buildDevices() {
   return list;
 }
 
-export const devices = buildDevices();
+export const devices: Device[] = buildDevices();
 
 // 打开页面时就有几条告警和离线，看板不是空的。索引写死，刷新布局不会随机换设备。
-function patchDevice(predicate, patch) {
+function patchDevice(predicate: (device: Device) => boolean, patch: Partial<Device>) {
   const found = devices.find(predicate);
   if (found) Object.assign(found, patch);
 }
@@ -278,8 +295,8 @@ patchDevice((d) => d.type === 'charger' && d.key, { status: 'alarm' });
 patchDevice((d) => d.type === 'lamp', { online: false, status: 'normal' });
 patchDevice((d) => d.type === 'access' && d.buildingId === 'B09', { online: false, status: 'normal' });
 
-function scatter(x, y, count, radius, seed) {
-  const pts = [];
+function scatter(x: number, y: number, count: number, radius: number, seed: number): HeatPoint[] {
+  const pts: HeatPoint[] = [];
   for (let i = 0; i < count; i += 1) {
     const ang = seed + i * 2.399;
     const r = radius * ((i % 6) + 1) / 7;
@@ -289,7 +306,7 @@ function scatter(x, y, count, radius, seed) {
   return pts;
 }
 
-export const heatPoints = [
+export const heatPoints: HeatPoint[] = [
   ...scatter(0, -200, 14, 46, 0.4),
   ...scatter(230, 0, 10, 36, 1.2),
   ...scatter(-230, 0, 8, 32, 2.1),
@@ -305,11 +322,12 @@ export const presets = {
   gate: { zoom: 18.5, pitch: 48, rotation: 4, targetId: 'G-S' },
 };
 
-export function presetTarget(name) {
+export function presetTarget(name: PresetName) {
   const preset = presets[name];
   if (!preset) return null;
-  if (preset.target) return { ...preset, center: preset.target };
-  const pool = [...buildings, ...gates];
+  if ('target' in preset) return { ...preset, center: preset.target };
+  const pool: Array<Building | Gate> = [...buildings, ...gates];
   const found = pool.find((item) => item.id === preset.targetId);
-  return { ...preset, center: [found.lng, found.lat] };
+  if (!found) return null;
+  return { ...preset, center: [found.lng, found.lat] as LngLat };
 }

@@ -8,9 +8,11 @@ import {
   roads,
   boundary,
   PARK_CENTER,
-} from '../mock/parkData.js';
-import { metersToLngLat } from '../utils/coord.js';
-import { STATUS_HEX, statusKey } from '../utils/present.js';
+} from '../mock/parkData';
+import type { Building, Device, DeviceType, Pipe, SelectionPayload, StatusKey, TimeMode } from '../types/park';
+import { metersToLngLat } from '../utils/coord';
+import type { CoordTransformer } from '../utils/coord';
+import { STATUS_HEX, statusKey } from '../utils/present';
 import {
   buildFloorLines,
   buildRibbonGeometry,
@@ -22,33 +24,84 @@ import {
   createLampBulbGeometry,
   createLampPoleGeometry,
   disposeObject,
-} from '../utils/render.js';
+} from '../utils/render';
 import {
   createAlarmGlowMaterial,
   createFlowMaterial,
   createFlyLineMaterial,
   trackTime,
-} from '../shaders/materials.js';
+} from '../shaders/materials';
 
 /** 超过这个距离（米级自定义坐标）就换成没有窗和层线的盒子。 */
 export const LOD_DISTANCE = 2000;
 
-const TYPE_ORDER = ['camera', 'charger', 'access', 'lamp'];
-const GEOMETRY_FACTORY = {
+const TYPE_ORDER: DeviceType[] = ['camera', 'charger', 'access', 'lamp'];
+const GEOMETRY_FACTORY: Record<DeviceType, () => THREE.BufferGeometry> = {
   camera: createCameraGeometry,
   charger: createChargerGeometry,
   access: createAccessGeometry,
   lamp: createLampPoleGeometry,
 };
-const GLOW_Z = { camera: 2.5, charger: 1.5, access: 1.7, lamp: 4.6 };
-const GLOW_SCALE = { camera: 1, charger: 0.82, access: 0.95, lamp: 1.25 };
+const GLOW_Z: Record<DeviceType, number> = { camera: 2.5, charger: 1.5, access: 1.7, lamp: 4.6 };
+const GLOW_SCALE: Record<DeviceType, number> = { camera: 1, charger: 0.82, access: 0.95, lamp: 1.25 };
+
+interface BuildingRecord {
+  data: Building;
+  lod: THREE.LOD;
+  bodyMat: THREE.MeshPhongMaterial;
+  lowMat: THREE.MeshPhongMaterial;
+  lineMat: THREE.LineBasicMaterial;
+  winMat: THREE.MeshBasicMaterial;
+  baseColor: THREE.Color;
+  anchor: THREE.Vector3;
+  custom: THREE.Object3D | null;
+}
+
+interface PipeMesh {
+  data: Pipe;
+  mesh: THREE.Mesh;
+  material: THREE.ShaderMaterial;
+}
 
 /**
  * 园区三维内容：白模、道路绿化、管网、实例化设备、飞线、告警光壳。
  * 坐标全部来自 CoordTransformer，不再自己用米去对地图像素。
  */
 export class ParkWorld {
-  constructor(scene, coord) {
+  declare scene: THREE.Scene;
+  declare coord: CoordTransformer;
+  declare center: CoordTransformer['center'];
+  declare timeMaterials: THREE.ShaderMaterial[];
+  declare records: Map<string, BuildingRecord>;
+  declare lods: THREE.LOD[];
+  declare deviceMeshes: Partial<Record<DeviceType, THREE.InstancedMesh>>;
+  declare pipes: PipeMesh[];
+  declare night: boolean;
+  declare alarmVisible: boolean;
+  declare selectedIds: Set<string>;
+  declare selectedBuilding: string | null;
+  declare selectedPipe: string | null;
+  declare tmp: THREE.Color;
+  declare dummy: THREE.Object3D;
+  declare statusColor: Record<StatusKey, THREE.Color>;
+  declare origin: THREE.Vector3;
+  declare baseGroup: THREE.Group;
+  declare buildingGroup: THREE.Group;
+  declare deviceGroup: THREE.Group;
+  declare pipeGroup: THREE.Group;
+  declare alarmGroup: THREE.Group;
+  declare flylineGroup: THREE.Group;
+  declare ambient: THREE.AmbientLight;
+  declare hemi: THREE.HemisphereLight;
+  declare sun: THREE.DirectionalLight;
+  declare fill: THREE.DirectionalLight;
+  declare glowLevels: Float32Array;
+  declare glow: THREE.InstancedMesh;
+  declare bulbs?: THREE.InstancedMesh;
+  declare lamps: Device[];
+  declare ring: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+
+  constructor(scene: THREE.Scene, coord: CoordTransformer) {
     this.scene = scene;
     this.coord = coord;
     this.center = coord.center;
@@ -71,6 +124,7 @@ export class ParkWorld {
       offline: new THREE.Color(STATUS_HEX.offline),
       selected: new THREE.Color(STATUS_HEX.selected),
     };
+    this.lamps = [];
 
     this.origin = coord.toVector(PARK_CENTER[0], PARK_CENTER[1], 0);
     this.baseGroup = new THREE.Group();
@@ -115,7 +169,7 @@ export class ParkWorld {
     this.scene.add(this.ambient, this.hemi, this.sun, this.fill);
   }
 
-  worldPoint(x, y, z = 0) {
+  worldPoint(x: number, y: number, z = 0) {
     const [lng, lat] = metersToLngLat(this.center, x, y);
     return this.coord.toVector(lng, lat, z);
   }
@@ -186,7 +240,7 @@ export class ParkWorld {
     this.baseGroup.add(fence);
 
     const gateGeo = createGateGeometry();
-    const gateMat = new THREE.MeshPhongMaterial({ color: 0xdbe7f5, shininess: 20, specular: 0x334155 });
+    const gateMat = new THREE.MeshPhongMaterial({ color: 0xdbe7f5, shininess: 20, specular: new THREE.Color('#334155') });
     gates.forEach((gate) => {
       const mesh = new THREE.Mesh(gateGeo, gateMat);
       const anchor = this.coord.toVector(gate.lng, gate.lat, 0);
@@ -269,14 +323,14 @@ export class ParkWorld {
 
   buildPipes() {
     pipes.forEach((pipe) => {
-      const path = [];
+      const path: THREE.Vector3[] = [];
       pipe.path.forEach(([x, y], index) => {
         const point = this.worldPoint(x, y, pipe.depth);
-        const duplicated = index === pipe.path.length - 1 && path.length && point.distanceTo(path[0]) < 1;
+        const duplicated = index === pipe.path.length - 1 && path.length && path[0] && point.distanceTo(path[0]) < 1;
         if (!duplicated) path.push(point);
       });
-      const start = this.worldPoint(pipe.path[0][0], pipe.path[0][1], 0.3);
-      const last = pipe.path.at(-1);
+      const start = this.worldPoint(pipe.path[0]![0], pipe.path[0]![1], 0.3);
+      const last = pipe.path[pipe.path.length - 1] ?? pipe.path[0] ?? [0, 0];
       const end = this.worldPoint(last[0], last[1], 0.3);
       const curve = new THREE.CatmullRomCurve3([start, ...path, end], false, 'catmullrom', 0.12);
       const segments = Math.min(140, Math.max(28, Math.round(pipe.length / 8)));
@@ -317,7 +371,7 @@ export class ParkWorld {
         mesh.setColorAt(index, this.statusColor[statusKey(device)]);
       });
       mesh.instanceMatrix.needsUpdate = true;
-      mesh.instanceColor.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       this.deviceGroup.add(mesh);
       this.deviceMeshes[type] = mesh;
       if (type === 'lamp') this.buildBulbs(list);
@@ -335,28 +389,29 @@ export class ParkWorld {
     this.alarmGroup.add(this.glow);
   }
 
-  buildBulbs(lamps) {
+  buildBulbs(lamps: Device[]) {
     const material = new THREE.MeshBasicMaterial({ color: 0xffffff });
     this.bulbs = new THREE.InstancedMesh(createLampBulbGeometry(), material, lamps.length);
     this.bulbs.frustumCulled = false;
     this.bulbs.userData = { pickType: 'device', devices: lamps };
     lamps.forEach((device, index) => {
+      if (!device.world) return;
       this.dummy.position.set(device.world.x, device.world.y, 6.28);
       this.dummy.rotation.set(0, 0, 0);
       this.dummy.scale.set(1, 1, 1);
       this.dummy.updateMatrix();
-      this.bulbs.setMatrixAt(index, this.dummy.matrix);
-      this.bulbs.setColorAt(index, new THREE.Color('#667084'));
+      this.bulbs?.setMatrixAt(index, this.dummy.matrix);
+      this.bulbs?.setColorAt(index, new THREE.Color('#667084'));
     });
     this.bulbs.instanceMatrix.needsUpdate = true;
-    this.bulbs.instanceColor.needsUpdate = true;
+    if (this.bulbs.instanceColor) this.bulbs.instanceColor.needsUpdate = true;
     this.deviceGroup.add(this.bulbs);
     this.lamps = lamps;
   }
 
   buildFlylines() {
     const material = trackTime(this.timeMaterials, createFlyLineMaterial('#7dd3fc'));
-    const pairs = [
+    const pairs: Array<[typeof gates[number] | undefined, Device | undefined]> = [
       [gates.find((g) => g.id === 'G-S'), devices.find((d) => d.key && d.buildingId === 'B01')],
       [gates.find((g) => g.id === 'G-S'), devices.find((d) => d.key && d.buildingId === 'B04')],
       [gates.find((g) => g.id === 'G-E'), devices.find((d) => d.type === 'charger' && d.key)],
@@ -398,9 +453,10 @@ export class ParkWorld {
     this.scene.add(this.ring);
   }
 
-  updateEffects(time) {
+  updateEffects(time: number) {
     this.timeMaterials.forEach((material) => {
-      material.uniforms.uTime.value = time;
+      const uniform = material.uniforms.uTime;
+      if (uniform) uniform.value = time;
     });
     if (this.ring.visible) {
       this.ring.material.opacity = 0.4 + 0.55 * (0.5 + 0.5 * Math.sin(time * 4));
@@ -408,18 +464,18 @@ export class ParkWorld {
     this.pulseColors(time);
   }
 
-  updateLod(camera) {
+  updateLod(camera: THREE.Camera) {
     this.lods.forEach((lod) => lod.update(camera));
   }
 
-  lodState(camera) {
+  lodState(camera: THREE.Camera) {
     return camera.position.distanceTo(this.origin) > LOD_DISTANCE ? '远景简化' : '近景精细';
   }
 
-  pulseColors(time) {
+  pulseColors(time: number) {
     devices.forEach((device) => {
       const mesh = this.deviceMeshes[device.type];
-      if (!mesh) return;
+      if (!mesh || device.instanceIndex == null) return;
       if (this.selectedIds.has(device.id)) {
         mesh.setColorAt(device.instanceIndex, this.statusColor.selected);
         return;
@@ -435,11 +491,11 @@ export class ParkWorld {
       mesh.setColorAt(device.instanceIndex, this.tmp.copy(base).multiplyScalar(scale));
     });
     Object.values(this.deviceMeshes).forEach((mesh) => {
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      if (mesh?.instanceColor) mesh.instanceColor.needsUpdate = true;
     });
   }
 
-  setAlarmVisible(visible) {
+  setAlarmVisible(visible: boolean) {
     this.alarmVisible = visible;
     this.syncGlow();
   }
@@ -454,6 +510,7 @@ export class ParkWorld {
     }
     this.glow.visible = true;
     list.forEach((device, index) => {
+      if (!device.world) return;
       this.dummy.position.set(device.world.x, device.world.y, device.glowZ || 2);
       this.dummy.rotation.set(0, 0, 0);
       this.dummy.scale.setScalar(device.glowScale || 1);
@@ -464,20 +521,22 @@ export class ParkWorld {
     });
     this.glow.count = list.length;
     this.glow.instanceMatrix.needsUpdate = true;
-    this.glow.instanceColor.needsUpdate = true;
-    this.glow.geometry.attributes.aLevel.needsUpdate = true;
+    if (this.glow.instanceColor) this.glow.instanceColor.needsUpdate = true;
+    const level = this.glow.geometry.getAttribute('aLevel');
+    if (level) level.needsUpdate = true;
   }
 
   refreshBulbs() {
     if (!this.bulbs) return;
     this.lamps.forEach((device) => {
+      if (device.instanceIndex == null) return;
       const color = this.night && device.online ? '#ffc56d' : '#667084';
-      this.bulbs.setColorAt(device.instanceIndex, this.tmp.set(color));
+      this.bulbs?.setColorAt(device.instanceIndex, this.tmp.set(color));
     });
-    this.bulbs.instanceColor.needsUpdate = true;
+    if (this.bulbs.instanceColor) this.bulbs.instanceColor.needsUpdate = true;
   }
 
-  setTimeOfDay(mode) {
+  setTimeOfDay(mode: TimeMode) {
     this.night = mode === 'night';
     this.ambient.intensity = this.night ? 0.16 : 0.62;
     this.hemi.intensity = this.night ? 0.08 : 0.42;
@@ -505,7 +564,7 @@ export class ParkWorld {
     this.refreshBulbs();
   }
 
-  highlight(payload) {
+  highlight(payload: SelectionPayload | null) {
     this.selectedIds = new Set(payload?.ids || []);
     this.selectedBuilding = payload?.kind === 'building' ? payload.id : null;
     this.selectedPipe = payload?.kind === 'pipe' ? payload.id : null;
@@ -519,7 +578,8 @@ export class ParkWorld {
       record.lineMat.opacity = on ? 1 : 0.7;
     });
     this.pipes.forEach((pipe) => {
-      pipe.material.uniforms.uHighlight.value = pipe.data.id === this.selectedPipe ? 1 : 0;
+      const highlight = pipe.material.uniforms.uHighlight;
+      if (highlight) highlight.value = pipe.data.id === this.selectedPipe ? 1 : 0;
     });
 
     if (!payload || payload.kind === 'multi') {
@@ -536,23 +596,23 @@ export class ParkWorld {
     this.ring.scale.setScalar(anchor.radius);
   }
 
-  anchorOf(payload) {
-    if (payload.kind === 'building') {
+  anchorOf(payload: SelectionPayload) {
+    if (payload.kind === 'building' && payload.id) {
       const record = this.records.get(payload.id);
       if (!record) return null;
       return { x: record.anchor.x, y: record.anchor.y, radius: Math.max(record.data.w, record.data.d) * 0.56 };
     }
-    if (payload.kind === 'device') {
+    if (payload.kind === 'device' && payload.id) {
       const device = devices.find((item) => item.id === payload.id);
       if (!device?.world) return null;
       return { x: device.world.x, y: device.world.y, radius: 2.8 };
     }
-    if (payload.kind === 'pipe') {
+    if (payload.kind === 'pipe' && payload.id) {
       const pipe = pipes.find((item) => item.id === payload.id);
       if (!pipe?.world) return null;
       return { x: pipe.world.x, y: pipe.world.y, radius: 5 };
     }
-    if (payload.kind === 'gate') {
+    if (payload.kind === 'gate' && payload.id) {
       const gate = gates.find((item) => item.id === payload.id);
       if (!gate?.world) return null;
       return { x: gate.world.x, y: gate.world.y, radius: 6.5 };
@@ -560,13 +620,13 @@ export class ParkWorld {
     return null;
   }
 
-  attachModel(buildingId, holder) {
+  attachModel(buildingId: string, holder: THREE.Object3D) {
     const record = this.records.get(buildingId);
     if (!record) return false;
     this.detachModel(buildingId);
     holder.position.set(record.anchor.x, record.anchor.y, 0);
     holder.traverse((obj) => {
-      if (obj.isMesh) {
+      if (obj instanceof THREE.Mesh) {
         obj.userData.pickType = 'building';
         obj.userData.id = buildingId;
       }
@@ -577,7 +637,7 @@ export class ParkWorld {
     return true;
   }
 
-  detachModel(buildingId) {
+  detachModel(buildingId: string) {
     const record = this.records.get(buildingId);
     if (!record?.custom) return;
     this.buildingGroup.remove(record.custom);
@@ -587,8 +647,8 @@ export class ParkWorld {
   }
 
   getPickables() {
-    const list = [];
-    const collect = (root) => {
+    const list: THREE.Object3D[] = [];
+    const collect = (root: THREE.Object3D) => {
       root.traverse((obj) => {
         if (!obj.userData?.pickType || !obj.visible) return;
         if (!visibleChain(obj)) return;
@@ -608,8 +668,8 @@ export class ParkWorld {
   }
 }
 
-function visibleChain(object) {
-  let current = object;
+function visibleChain(object: THREE.Object3D) {
+  let current: THREE.Object3D | null = object;
   while (current) {
     if (current.visible === false) return false;
     current = current.parent;

@@ -7,17 +7,19 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
  * 缩放按建筑占地和高度适配，底面贴地。业务侧只调 loadFitted / 由 MapScene.replaceBuilding 调用。
  */
 export class ModelLoader {
+  declare loader: GLTFLoader;
+
   constructor() {
     this.loader = new GLTFLoader();
   }
 
-  async loadFitted(url, footprint) {
+  async loadFitted(url: string, footprint: { w: number; d: number; h: number }) {
     const gltf = await this.loader.loadAsync(url);
-    return fitToFootprint(gltf.scene || gltf.scenes?.[0], footprint);
+    return fitToFootprint(gltf.scene, footprint);
   }
 }
 
-function fitToFootprint(scene, footprint) {
+function fitToFootprint(scene: THREE.Object3D | undefined, footprint: { w: number; d: number; h: number }) {
   if (!scene) throw new Error('模型里没有可显示的场景');
   scene.position.set(0, 0, 0);
   scene.rotation.set(0, 0, 0);

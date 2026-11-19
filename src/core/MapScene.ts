@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import AMapLoader from '@amap/amap-jsapi-loader';
+import { load as loadAMap } from '@amap/amap-jsapi-loader';
 import {
   buildings,
   devices,
@@ -9,9 +9,25 @@ import {
   PARK_NAME,
   pipes,
   presetTarget,
-} from '../mock/parkData.js';
-import { syncMapCamera } from '../utils/coord.js';
-import { CoordTransformer } from '../utils/coord.js';
+} from '../mock/parkData';
+import type { AMapMap, AMapNamespace, AMapOverlay, HeatMapLayer } from '../types/amap';
+import type {
+  Building,
+  Device,
+  EntityKind,
+  Gate,
+  LayerName,
+  MeasureMode,
+  ParkEntity,
+  Pipe,
+  PresetName,
+  ResolvedHit,
+  RoamMode,
+  SceneHooks,
+  SelectionPayload,
+  TimeMode,
+} from '../types/park';
+import { CoordTransformer, syncMapCamera } from '../utils/coord';
 import {
   presentBuilding,
   presentDevice,
@@ -20,15 +36,22 @@ import {
   presentPipe,
   STATUS_HEX,
   statusKey,
-} from '../utils/present.js';
-import { AlarmManager } from './AlarmManager.js';
-import { CameraController } from './CameraController.js';
-import { InteractionController } from './InteractionController.js';
-import { LayerManager } from './LayerManager.js';
-import { ModelLoader } from './ModelLoader.js';
-import { ParkWorld } from './createWorld.js';
+} from '../utils/present';
+import { AlarmManager } from './AlarmManager';
+import { CameraController } from './CameraController';
+import { InteractionController } from './InteractionController';
+import { LayerManager } from './LayerManager';
+import { ModelLoader } from './ModelLoader';
+import { ParkWorld } from './createWorld';
 
 const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRight']);
+
+interface NamedPlace {
+  id: string;
+  name: string;
+  lng: number;
+  lat: number;
+}
 
 /**
  * 场景门面。
@@ -36,7 +59,52 @@ const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ShiftLeft', 'ShiftRi
  * 并把图层、告警、交互、漫游这些类串起来。Vue 只通过这里的方法驱动场景。
  */
 export class MapScene {
-  constructor(container, hooks) {
+  declare container: HTMLElement;
+  declare hooks: SceneHooks;
+  declare layers: LayerManager;
+  declare modelLoader: ModelLoader;
+  declare lookup: {
+    buildings: Map<string, Building>;
+    devices: Map<string, Device>;
+    pipes: Map<string, Pipe>;
+    gates: Map<string, Gate>;
+  };
+  declare roamMode: RoamMode;
+  declare measureMode: MeasureMode;
+  declare boxMode: boolean;
+  declare autoRotate: boolean;
+  declare timeMode: TimeMode;
+  declare heatVisible: boolean;
+  declare selection: SelectionPayload | null;
+  declare ready: boolean;
+  declare clock: THREE.Clock;
+  declare lastFrame: number;
+  declare lastView: number;
+  declare lastHeat: number;
+  declare markerById: Map<string, AMapOverlay>;
+  declare labelById: Map<string, AMapOverlay>;
+  declare AMap: AMapNamespace;
+  declare map: AMapMap;
+  declare coord: CoordTransformer;
+  declare layer: unknown;
+  declare renderer: THREE.WebGLRenderer;
+  declare scene: THREE.Scene;
+  declare camera: THREE.PerspectiveCamera;
+  declare world: ParkWorld;
+  declare cameraCtrl: CameraController;
+  declare interaction: InteractionController;
+  declare alarms: AlarmManager;
+  declare renderFailed: boolean;
+  declare raf: number;
+  declare observer?: ResizeObserver;
+  declare deviceOverlay: AMapOverlay;
+  declare buildingOverlay: AMapOverlay;
+  declare heatmap: HeatMapLayer;
+  declare onKeyDown: (event: KeyboardEvent) => void;
+  declare onDragOver: (event: DragEvent) => void;
+  declare onDrop: (event: DragEvent) => void;
+
+  constructor(container: HTMLElement, hooks: SceneHooks) {
     this.container = container;
     this.hooks = hooks;
     this.layers = new LayerManager();
@@ -61,6 +129,8 @@ export class MapScene {
     this.lastHeat = 0;
     this.markerById = new Map();
     this.labelById = new Map();
+    this.renderFailed = false;
+    this.raf = 0;
   }
 
   async init() {
@@ -72,11 +142,11 @@ export class MapScene {
       }
 
       this.hooks.onLoading?.({ step: 1, text: '正在加载高德 JS API' });
-      const AMap = await AMapLoader.load({
+      const AMap = await loadAMap({
         key,
         version: '2.0',
         plugins: ['AMap.Scale', 'AMap.ControlBar', 'AMap.HeatMap'],
-      });
+      }) as AMapNamespace;
       this.AMap = AMap;
 
       this.hooks.onLoading?.({ step: 2, text: '正在创建三维地图并生成园区' });
@@ -97,7 +167,7 @@ export class MapScene {
 
       this.coord = new CoordTransformer(this.map, PARK_CENTER);
       // init 往往在 map.add 之后的某一帧才执行，不能立刻检查 camera。
-      const glReady = new Promise((resolve, reject) => {
+      const glReady = new Promise<void>((resolve, reject) => {
         this.layer = new AMap.GLCustomLayer({
           zIndex: 120,
           init: (gl) => {
@@ -151,7 +221,7 @@ export class MapScene {
       this.onDrop = (event) => {
         event.preventDefault();
         const file = event.dataTransfer?.files?.[0];
-        if (file) this.loadModelFile(file);
+        if (file) void this.loadModelFile(file);
       };
       window.addEventListener('keydown', this.onKeyDown);
       this.container.addEventListener('dragover', this.onDragOver);
@@ -173,11 +243,11 @@ export class MapScene {
       window.__park = this;
     } catch (error) {
       console.error(error);
-      this.hooks.onError?.(error?.message || '场景初始化失败');
+      this.hooks.onError?.(error instanceof Error ? error.message : '场景初始化失败');
     }
   }
 
-  addControls(AMap) {
+  addControls(AMap: AMapNamespace) {
     try {
       this.map.addControl(new AMap.Scale({ position: 'LB' }));
       this.map.addControl(new AMap.ControlBar({
@@ -192,7 +262,7 @@ export class MapScene {
    * init 回调里只能做同步工作，渲染循环可能紧跟着进来。
    * 高德把已创建好的 WebGL1 上下文传进来，Three r163 起不再接受 WebGL1，所以这里锁定 0.162。
    */
-  setupGL(gl) {
+  setupGL(gl: WebGLRenderingContext) {
     this.renderer = new THREE.WebGLRenderer({ context: gl });
     this.renderer.autoClear = false;
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
@@ -223,7 +293,8 @@ export class MapScene {
       if (!this.renderFailed) {
         this.renderFailed = true;
         console.error(error);
-        this.hooks.onToast?.(`三维渲染异常：${error.message || error}`);
+        const text = error instanceof Error ? error.message : String(error);
+        this.hooks.onToast?.(`三维渲染异常：${text}`);
       }
     }
   }
@@ -239,7 +310,7 @@ export class MapScene {
     );
   }
 
-  setupOverlays(AMap) {
+  setupOverlays(AMap: AMapNamespace) {
     const markers = devices.map((device) => {
       const marker = new AMap.CircleMarker({
         center: [device.lng, device.lat],
@@ -253,7 +324,7 @@ export class MapScene {
         cursor: 'pointer',
         zooms: [15.5, 20],
       });
-      marker.on('click', () => this.selectKind('device', device));
+      marker.on?.('click', () => this.selectKind('device', device));
       this.markerById.set(device.id, marker);
       return marker;
     });
@@ -282,7 +353,7 @@ export class MapScene {
       data: heatPoints.map((point) => ({ lng: point.lng, lat: point.lat, count: point.count })),
       max: 100,
     });
-    this.heatmap.hide();
+    this.heatmap.hide?.();
 
     this.layers.register('building', this.world.buildingGroup);
     this.layers.register('building', this.buildingOverlay);
@@ -298,7 +369,7 @@ export class MapScene {
     });
   }
 
-  makeLabel(AMap, item, onClick) {
+  makeLabel(AMap: AMapNamespace, item: NamedPlace, onClick: () => void) {
     const text = new AMap.Text({
       text: item.name,
       position: [item.lng, item.lat],
@@ -308,7 +379,7 @@ export class MapScene {
       bubble: false,
       style: labelStyle(false),
     });
-    text.on('click', onClick);
+    text.on?.('click', onClick);
     this.labelById.set(item.id, text);
     return text;
   }
@@ -322,7 +393,7 @@ export class MapScene {
   }
 
   startLoop() {
-    const step = (now) => {
+    const step = (now: number) => {
       this.raf = requestAnimationFrame(step);
       if (!this.map || document.hidden) return;
       const dt = Math.min(0.05, (now - (this.lastFrame || now)) / 1000);
@@ -344,7 +415,7 @@ export class MapScene {
     this.raf = requestAnimationFrame(step);
   }
 
-  pushHeat(time) {
+  pushHeat(time: number) {
     if (!this.heatmap?.setDataSet) return;
     this.heatmap.setDataSet({
       max: 100,
@@ -389,14 +460,14 @@ export class MapScene {
     }
   }
 
-  setLayer(name, visible) {
+  setLayer(name: LayerName, visible: boolean) {
     this.layers.setVisible(name, visible);
     if (name === 'alarm') this.world.setAlarmVisible(visible);
     if (name === 'heat') this.heatVisible = visible;
     this.hooks.onLayers?.({ ...this.layers.state });
   }
 
-  setRoamMode(mode) {
+  setRoamMode(mode: RoamMode) {
     if (this.roamMode === mode) return;
     if (mode === 'fps') {
       this.boxMode = false;
@@ -410,13 +481,13 @@ export class MapScene {
     if (mode === 'fps') this.hooks.onToast?.('第一人称：WASD 移动，鼠标转向，Shift 加速，滚轮缩放，Esc 退出');
   }
 
-  setAutoRotate(enabled) {
+  setAutoRotate(enabled: boolean) {
     if (enabled && this.roamMode === 'fps') this.setRoamMode('free');
     this.autoRotate = enabled;
     this.emitMode();
   }
 
-  setBoxMode(enabled) {
+  setBoxMode(enabled: boolean) {
     if (enabled && this.roamMode === 'fps') this.setRoamMode('free');
     if (enabled && this.measureMode !== 'none') {
       this.measureMode = 'none';
@@ -428,7 +499,7 @@ export class MapScene {
     this.emitMode();
   }
 
-  setMeasureMode(mode) {
+  setMeasureMode(mode: MeasureMode) {
     if (mode !== 'none' && this.roamMode === 'fps') this.setRoamMode('free');
     if (mode !== 'none' && this.boxMode) {
       this.boxMode = false;
@@ -445,7 +516,7 @@ export class MapScene {
     this.hooks.onToast?.('已清除测量标注');
   }
 
-  setTimeOfDay(mode) {
+  setTimeOfDay(mode: TimeMode) {
     this.timeMode = mode;
     this.world.setTimeOfDay(mode);
     this.map.setMapStyle(mode === 'night' ? 'amap://styles/darkblue' : 'amap://styles/whitesmoke');
@@ -464,14 +535,15 @@ export class MapScene {
     this.world.setTimeOfDay(this.timeMode);
     this.world.highlight(this.selection);
     if (this.selection?.kind === 'device' && this.selection.id) {
-      this.applySelection(this.present('device', this.lookup.devices.get(this.selection.id)));
+      const device = this.lookup.devices.get(this.selection.id);
+      if (device) this.applySelection(this.present('device', device));
     } else {
       this.refreshMarkers();
     }
     this.hooks.onToast?.('已重置全部设备状态');
   }
 
-  flyPreset(name) {
+  flyPreset(name: PresetName) {
     const preset = presetTarget(name);
     if (!preset) return;
     if (this.roamMode === 'fps') this.setRoamMode('free');
@@ -487,14 +559,14 @@ export class MapScene {
     this.flyPreset('global');
   }
 
-  focusAlarm(deviceId) {
+  focusAlarm(deviceId: string) {
     const device = this.lookup.devices.get(deviceId);
     if (!device) return;
     if (this.roamMode === 'fps') this.setRoamMode('free');
     this.selectKind('device', device, { strong: true });
   }
 
-  selectResolved(resolved) {
+  selectResolved(resolved: ResolvedHit | null) {
     if (!resolved) {
       this.clearSelection();
       return;
@@ -502,7 +574,7 @@ export class MapScene {
     this.selectKind(resolved.kind, resolved.data);
   }
 
-  selectBox(list) {
+  selectBox(list: Device[]) {
     if (!list.length) {
       this.hooks.onToast?.('框选范围内没有设备');
       return;
@@ -510,26 +582,24 @@ export class MapScene {
     this.applySelection(presentMulti(list));
   }
 
-  selectKind(kind, data, options = {}) {
+  selectKind(kind: EntityKind, data: ParkEntity | undefined, options: { strong?: boolean; fly?: boolean } = {}) {
     if (!data) return;
     this.applySelection(this.present(kind, data));
     if (options.fly !== false) this.flyToEntity(kind, data, options.strong);
   }
 
-  present(kind, data) {
-    const factory = {
-      building: presentBuilding,
-      device: presentDevice,
-      pipe: presentPipe,
-      gate: presentGate,
-    };
-    const payload = factory[kind](data);
+  present(kind: EntityKind, data: ParkEntity): SelectionPayload {
+    let payload: SelectionPayload;
+    if (kind === 'building') payload = presentBuilding(data as Building);
+    else if (kind === 'device') payload = presentDevice(data as Device);
+    else if (kind === 'pipe') payload = presentPipe(data as Pipe);
+    else payload = presentGate(data as Gate);
     if (kind === 'device') payload.ids = [data.id];
     if (kind === 'building') payload.custom = Boolean(this.world.records.get(data.id)?.custom);
     return payload;
   }
 
-  applySelection(payload) {
+  applySelection(payload: SelectionPayload) {
     this.selection = payload;
     this.world.highlight(payload);
     this.refreshMarkers();
@@ -543,7 +613,7 @@ export class MapScene {
     this.hooks.onSelect?.(null);
   }
 
-  flyToEntity(kind, data, strong) {
+  flyToEntity(kind: EntityKind, data: { lng: number; lat: number }, strong?: boolean) {
     const view = this.cameraCtrl.snapshot();
     this.cameraCtrl.flyTo({
       center: [data.lng, data.lat],
@@ -554,11 +624,12 @@ export class MapScene {
   }
 
   refreshMarkers() {
-    const selected = this.world?.selectedIds || new Set();
+    const selected = this.world?.selectedIds || new Set<string>();
     const buildingId = this.selection?.kind === 'building' ? this.selection.id : null;
     const gateId = this.selection?.kind === 'gate' ? this.selection.id : null;
     this.markerById.forEach((marker, id) => {
       const device = this.lookup.devices.get(id);
+      if (!device) return;
       const on = selected.has(id);
       marker.setOptions?.({
         fillColor: on ? STATUS_HEX.selected : STATUS_HEX[statusKey(device)],
@@ -570,7 +641,7 @@ export class MapScene {
     });
   }
 
-  async loadModelFile(file) {
+  async loadModelFile(file: File) {
     const buildingId = this.selection?.kind === 'building' ? this.selection.id : null;
     if (!buildingId) {
       this.hooks.onToast?.('请先点选一座建筑，再加载 GLB / GLTF');
@@ -584,6 +655,7 @@ export class MapScene {
     try {
       this.hooks.onToast?.('正在解析模型…');
       const record = this.world.records.get(buildingId);
+      if (!record) return;
       const holder = await this.modelLoader.loadFitted(url, {
         w: record.data.w,
         d: record.data.d,
@@ -594,7 +666,8 @@ export class MapScene {
       this.hooks.onToast?.(`已用 ${file.name} 替换「${record.data.name}」`);
     } catch (error) {
       console.error(error);
-      this.hooks.onToast?.(`模型加载失败：${error.message || error}`);
+      const text = error instanceof Error ? error.message : String(error);
+      this.hooks.onToast?.(`模型加载失败：${text}`);
     } finally {
       URL.revokeObjectURL(url);
     }
@@ -630,9 +703,9 @@ export class MapScene {
     else this.container.style.cursor = '';
   }
 
-  handleKey(event) {
-    const tag = event.target?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  handleKey(event: KeyboardEvent) {
+    const target = event.target;
+    if (target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
     if (this.roamMode === 'fps' && MOVE_KEYS.has(event.code)) event.preventDefault();
     if (event.repeat) return;
     if (event.code === 'Digit1') this.flyPreset('global');
@@ -670,8 +743,8 @@ function amapConfig() {
   return { key, securityJsCode, missing: !key };
 }
 
-function waitMap(map) {
-  return new Promise((resolve, reject) => {
+function waitMap(map: AMapMap) {
+  return new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error('地图加载超时。请检查 Key、安全密钥，以及 localhost 是否已加入域名白名单'));
     }, 15000);
@@ -682,7 +755,7 @@ function waitMap(map) {
   });
 }
 
-function labelStyle(active) {
+function labelStyle(active: boolean): Record<string, string> {
   return {
     'background-color': active ? 'rgba(29, 78, 216, 0.9)' : 'rgba(8, 16, 32, 0.78)',
     border: active ? '1px solid #93c5fd' : '1px solid rgba(148, 176, 214, 0.4)',

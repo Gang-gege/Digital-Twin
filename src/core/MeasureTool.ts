@@ -1,11 +1,23 @@
-import { formatArea, formatMeters, lngLatToMeters, ringArea } from '../utils/coord.js';
+import type { AMapLngLat, AMapMap, AMapNamespace, AMapOverlay, OverlayGroup } from '../types/amap';
+import type { LngLat, MeasureMode } from '../types/park';
+import { formatArea, formatMeters, lngLatToMeters, ringArea } from '../utils/coord';
 
 /**
  * 测量标注。图形全部放在高德 OverlayGroup 里，不写进建筑/设备网格，
  * 这样“标注图层”可以单独显隐，也不会被三维拾取打中。
  */
 export class MeasureTool {
-  constructor({ AMap, map, center }) {
+  declare AMap: AMapNamespace;
+  declare map: AMapMap;
+  declare center: LngLat;
+  declare mode: MeasureMode;
+  declare draft: LngLat[];
+  declare preview: AMapOverlay[];
+  declare committed: AMapOverlay[];
+  declare group: OverlayGroup;
+  declare hint: string;
+
+  constructor({ AMap, map, center }: { AMap: AMapNamespace; map: AMapMap; center: LngLat }) {
     this.AMap = AMap;
     this.map = map;
     this.center = center;
@@ -18,14 +30,14 @@ export class MeasureTool {
     this.hint = '';
   }
 
-  setMode(mode) {
+  setMode(mode: MeasureMode) {
     if (this.mode !== mode) this.discardDraft();
     this.mode = mode;
     this.hint = HINT[mode] || '';
     return this.hint;
   }
 
-  addPoint(lnglat) {
+  addPoint(lnglat: AMapLngLat | LngLat) {
     const point = pair(lnglat);
     if (this.mode === 'area' && this.draft.length >= 3 && this.nearFirst(point)) {
       this.finish();
@@ -35,7 +47,7 @@ export class MeasureTool {
     this.redrawDraft();
   }
 
-  addElevation(lnglat, height) {
+  addElevation(lnglat: AMapLngLat | LngLat, height: number) {
     const point = pair(lnglat);
     this.keep(this.dot(point));
     this.keep(this.label(point, `标高 ${height.toFixed(1)} m`, 0, -16));
@@ -59,9 +71,9 @@ export class MeasureTool {
     this.committed = [];
   }
 
-  setVisible(visible) {
-    if (visible) this.group.show();
-    else this.group.hide();
+  setVisible(visible: boolean) {
+    if (visible) this.group.show?.();
+    else this.group.hide?.();
   }
 
   discardDraft() {
@@ -78,22 +90,25 @@ export class MeasureTool {
     if (this.mode === 'area') this.drawArea(this.draft, this.preview);
   }
 
-  drawDistance(points, bucket) {
+  drawDistance(points: LngLat[], bucket: AMapOverlay[]) {
     if (points.length >= 2) bucket.push(this.line(points));
     let total = 0;
     for (let i = 1; i < points.length; i += 1) {
-      const length = this.segmentLength(points[i - 1], points[i]);
+      const previous = points[i - 1];
+      const current = points[i];
+      if (!previous || !current) continue;
+      const length = this.segmentLength(previous, current);
       total += length;
-      const mid = [(points[i - 1][0] + points[i][0]) / 2, (points[i - 1][1] + points[i][1]) / 2];
+      const mid: LngLat = [(previous[0] + current[0]) / 2, (previous[1] + current[1]) / 2];
       bucket.push(this.label(mid, formatMeters(length), 0, -12));
     }
     const last = points[points.length - 1];
-    bucket.push(this.label(last, `总长 ${formatMeters(total)}`, 12, 8));
+    if (last) bucket.push(this.label(last, `总长 ${formatMeters(total)}`, 12, 8));
     points.forEach((point) => bucket.push(this.dot(point)));
     bucket.forEach((item) => this.group.addOverlay(item));
   }
 
-  drawArea(points, bucket) {
+  drawArea(points: LngLat[], bucket: AMapOverlay[]) {
     if (points.length >= 2) bucket.push(this.line(points));
     if (points.length >= 3) {
       bucket.push(this.polygon(points));
@@ -107,17 +122,19 @@ export class MeasureTool {
     bucket.forEach((item) => this.group.addOverlay(item));
   }
 
-  segmentLength(a, b) {
+  segmentLength(a: LngLat, b: LngLat) {
     const pa = lngLatToMeters(this.center, a[0], a[1]);
     const pb = lngLatToMeters(this.center, b[0], b[1]);
     return Math.hypot(pa.east - pb.east, pa.north - pb.north);
   }
 
-  nearFirst(point) {
-    return this.segmentLength(this.draft[0], point) < 4;
+  nearFirst(point: LngLat) {
+    const first = this.draft[0];
+    if (!first) return false;
+    return this.segmentLength(first, point) < 4;
   }
 
-  line(path) {
+  line(path: LngLat[]) {
     return new this.AMap.Polyline({
       path,
       strokeColor: '#4c8dff',
@@ -128,7 +145,7 @@ export class MeasureTool {
     });
   }
 
-  polygon(path) {
+  polygon(path: LngLat[]) {
     return new this.AMap.Polygon({
       path,
       strokeColor: '#4c8dff',
@@ -140,7 +157,7 @@ export class MeasureTool {
     });
   }
 
-  dot(position) {
+  dot(position: LngLat) {
     return new this.AMap.CircleMarker({
       center: position,
       radius: 4,
@@ -153,7 +170,7 @@ export class MeasureTool {
     });
   }
 
-  label(position, text, x, y) {
+  label(position: LngLat, text: string, x: number, y: number) {
     return new this.AMap.Text({
       text,
       position,
@@ -172,12 +189,12 @@ export class MeasureTool {
     });
   }
 
-  keep(overlay) {
+  keep(overlay: AMapOverlay) {
     this.committed.push(overlay);
     this.group.addOverlay(overlay);
   }
 
-  removeList(list) {
+  removeList(list: AMapOverlay[]) {
     list.forEach((overlay) => {
       try {
         this.group.removeOverlay(overlay);
@@ -189,14 +206,14 @@ export class MeasureTool {
   }
 }
 
-const HINT = {
+const HINT: Record<MeasureMode, string> = {
   distance: '测距：单击加点，双击或右键结束',
   area: '测面积：单击加点，靠近起点或双击闭合',
   elevation: '标高：单击建筑、设备或地面放置标注',
   none: '',
 };
 
-function pair(lnglat) {
+function pair(lnglat: AMapLngLat | LngLat): LngLat {
   if (Array.isArray(lnglat)) return [lnglat[0], lnglat[1]];
   return [lnglat.getLng?.() ?? lnglat.lng, lnglat.getLat?.() ?? lnglat.lat];
 }

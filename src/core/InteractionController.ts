@@ -1,13 +1,79 @@
 import * as THREE from 'three';
-import { lngLatToMeters } from '../utils/coord.js';
-import { MeasureTool } from './MeasureTool.js';
+import type { AMapEvent, AMapMap, AMapNamespace, AMapPixel } from '../types/amap';
+import type { Building, Device, Gate, LngLat, MeasureMode, Pipe, PointerInfo, ResolvedHit } from '../types/park';
+import { lngLatToMeters } from '../utils/coord';
+import { MeasureTool } from './MeasureTool';
+
+interface Lookup {
+  buildings: Map<string, Building>;
+  devices: Map<string, Device>;
+  pipes: Map<string, Pipe>;
+  gates: Map<string, Gate>;
+}
+
+interface InteractionOptions {
+  AMap: AMapNamespace;
+  map: AMapMap;
+  camera: THREE.PerspectiveCamera;
+  dom: HTMLElement;
+  center: LngLat;
+  syncCamera: () => void;
+  getPickables: () => THREE.Object3D[];
+  lookup: Lookup;
+  deviceVisible?: () => boolean;
+  onSelect: (hit: ResolvedHit | null) => void;
+  onBox: (devices: Device[]) => void;
+  onPointer: (info: PointerInfo) => void;
+}
+
+interface PickUserData {
+  pickType?: 'device' | 'building' | 'pipe' | 'gate';
+  id?: string;
+  devices?: Device[];
+}
+
+interface BoxRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 /**
  * 交互：单击拾取、框选设备、把测量点击转给 MeasureTool。
  * 拾取前会先同步一次高德相机，否则射线还停在上一帧的镜头上。
  */
 export class InteractionController {
-  constructor(options) {
+  declare map: AMapMap;
+  declare camera: THREE.PerspectiveCamera;
+  declare dom: HTMLElement;
+  declare center: LngLat;
+  declare syncCamera: () => void;
+  declare getPickables: () => THREE.Object3D[];
+  declare lookup: Lookup;
+  declare deviceVisible: () => boolean;
+  declare onSelect: (hit: ResolvedHit | null) => void;
+  declare onBox: (devices: Device[]) => void;
+  declare onPointer: (info: PointerInfo) => void;
+  declare raycaster: THREE.Raycaster;
+  declare pointer: THREE.Vector2;
+  declare measure: MeasureTool;
+  declare boxMode: boolean;
+  declare dragging: boolean;
+  declare start: { x: number; y: number };
+  declare current: { x: number; y: number };
+  declare lastMove: number;
+  declare boxEl: HTMLDivElement;
+  declare onClick: (event: AMapEvent) => void;
+  declare onDbl: () => void;
+  declare onRight: () => void;
+  declare onMove: (event: AMapEvent) => void;
+  declare onDown: (event: MouseEvent) => void;
+  declare onWindowMove: (event: MouseEvent) => void;
+  declare onWindowUp: () => void;
+  declare onMenu: (event: MouseEvent) => void;
+
+  constructor(options: InteractionOptions) {
     this.map = options.map;
     this.camera = options.camera;
     this.dom = options.dom;
@@ -35,7 +101,7 @@ export class InteractionController {
     this.boxEl = document.createElement('div');
     this.boxEl.className = 'select-box';
     this.dom.appendChild(this.boxEl);
-    this.bind(options.AMap);
+    this.bind();
   }
 
   bind() {
@@ -72,12 +138,12 @@ export class InteractionController {
     this.measure.clear();
   }
 
-  setBoxMode(enabled) {
+  setBoxMode(enabled: boolean) {
     this.boxMode = enabled;
     if (!enabled) this.hideBox();
   }
 
-  setMeasureMode(mode) {
+  setMeasureMode(mode: MeasureMode) {
     return this.measure.setMode(mode);
   }
 
@@ -85,11 +151,11 @@ export class InteractionController {
     this.measure.clear();
   }
 
-  setMeasureVisible(visible) {
+  setMeasureVisible(visible: boolean) {
     this.measure.setVisible(visible);
   }
 
-  handleClick(event) {
+  handleClick(event: AMapEvent) {
     if (this.boxMode || this.dragging) return;
     const mode = this.measure.mode;
     if (mode === 'distance' || mode === 'area') {
@@ -108,7 +174,7 @@ export class InteractionController {
     if (this.measure.mode === 'distance' || this.measure.mode === 'area') this.measure.finish();
   }
 
-  handleMove(event) {
+  handleMove(event: AMapEvent) {
     const now = performance.now();
     if (now - this.lastMove < 70) return;
     this.lastMove = now;
@@ -123,7 +189,7 @@ export class InteractionController {
     this.onPointer({ lng, lat, east: local.east, north: local.north, hover });
   }
 
-  handleDown(event) {
+  handleDown(event: MouseEvent) {
     if (!this.boxMode || event.button !== 0) return;
     this.dragging = true;
     this.start = this.localPoint(event);
@@ -134,7 +200,7 @@ export class InteractionController {
     event.stopPropagation();
   }
 
-  handleDrag(event) {
+  handleDrag(event: MouseEvent) {
     if (!this.dragging) return;
     this.current = this.localPoint(event);
     this.placeBox();
@@ -149,11 +215,11 @@ export class InteractionController {
     this.onBox(this.devicesIn(rect));
   }
 
-  devicesIn(rect) {
+  devicesIn(rect: BoxRect) {
     if (!this.deviceVisible()) return [];
     this.syncCamera();
     const size = this.map.getSize();
-    const selected = [];
+    const selected: Device[] = [];
     this.lookup.devices.forEach((device) => {
       if (!device.world) return;
       const projected = device.world.clone();
@@ -169,7 +235,7 @@ export class InteractionController {
     return selected;
   }
 
-  heightAt(pixel) {
+  heightAt(pixel?: AMapPixel) {
     const resolved = this.resolve(this.raycast(pixel));
     if (!resolved) return 0;
     if (resolved.kind === 'building') return resolved.data.height;
@@ -179,7 +245,7 @@ export class InteractionController {
     return 0;
   }
 
-  raycast(pixel) {
+  raycast(pixel?: AMapPixel) {
     if (!pixel) return null;
     this.syncCamera();
     const size = this.map.getSize();
@@ -190,29 +256,30 @@ export class InteractionController {
     return hits[0] || null;
   }
 
-  resolve(hit) {
+  resolve(hit: THREE.Intersection | null): ResolvedHit | null {
     if (!hit) return null;
-    const { pickType, id, devices } = hit.object.userData || {};
+    const userData = (hit.object.userData || {}) as PickUserData;
+    const { pickType, id, devices } = userData;
     if (pickType === 'device') {
-      const data = devices?.[hit.instanceId];
+      const data = hit.instanceId == null ? undefined : devices?.[hit.instanceId];
       return data ? { kind: 'device', data, name: data.name } : null;
     }
     if (pickType === 'building') {
-      const data = this.lookup.buildings.get(id);
+      const data = id ? this.lookup.buildings.get(id) : undefined;
       return data ? { kind: 'building', data, name: data.name } : null;
     }
     if (pickType === 'pipe') {
-      const data = this.lookup.pipes.get(id);
+      const data = id ? this.lookup.pipes.get(id) : undefined;
       return data ? { kind: 'pipe', data, name: data.name } : null;
     }
     if (pickType === 'gate') {
-      const data = this.lookup.gates.get(id);
+      const data = id ? this.lookup.gates.get(id) : undefined;
       return data ? { kind: 'gate', data, name: data.name } : null;
     }
     return null;
   }
 
-  localPoint(event) {
+  localPoint(event: MouseEvent) {
     const rect = this.dom.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
@@ -230,7 +297,7 @@ export class InteractionController {
   }
 }
 
-function normalize(a, b) {
+function normalize(a: { x: number; y: number }, b: { x: number; y: number }): BoxRect {
   const x = Math.min(a.x, b.x);
   const y = Math.min(a.y, b.y);
   return { x, y, w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };

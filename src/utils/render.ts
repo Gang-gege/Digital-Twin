@@ -7,14 +7,14 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
  * Three 默认几何体是 Y 轴向上，所以立柱都先绕 X 轴转 90° 再摆放。
  */
 
-export function mergeParts(parts) {
+export function mergeParts(parts: THREE.BufferGeometry[]) {
   const merged = mergeGeometries(parts, false);
   parts.forEach((geo) => geo.dispose());
   if (!merged) throw new Error('几何体合并失败');
   return merged;
 }
 
-function pole(radiusTop, radiusBottom, height, zBase = 0) {
+function pole(radiusTop: number, radiusBottom: number, height: number, zBase = 0) {
   const geo = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, 8);
   geo.rotateX(Math.PI / 2);
   geo.translate(0, 0, zBase + height / 2);
@@ -81,24 +81,26 @@ export function createGateGeometry() {
  * 把一条折线铺成平面道路。
  * points 为世界坐标 Vector3（只需 x/y），z 由参数统一抬高，避免和绿地抢深度。
  */
-export function buildRibbonGeometry(rawPoints, width, z = 0.35) {
+export function buildRibbonGeometry(rawPoints: Array<{ x: number; y: number }>, width: number, z = 0.35) {
   const points = rawPoints.map((p) => new THREE.Vector3(p.x, p.y, z));
-  const closed = points.length > 2 && points[0].distanceTo(points[points.length - 1]) < 0.2;
+  const closed = points.length > 2 && points[0] && points[points.length - 1]
+    ? points[0].distanceTo(points[points.length - 1]!) < 0.2
+    : false;
   if (closed) points.pop();
   const count = points.length;
   if (count < 2) return null;
 
   const half = width / 2;
-  const positions = [];
-  const indices = [];
+  const positions: number[] = [];
+  const indices: number[] = [];
 
-  const at = (index) => {
-    if (closed) return points[(index + count) % count];
-    return points[Math.max(0, Math.min(count - 1, index))];
+  const at = (index: number) => {
+    if (closed) return points[(index + count) % count]!;
+    return points[Math.max(0, Math.min(count - 1, index))]!;
   };
 
   for (let i = 0; i < count; i += 1) {
-    let dir;
+    let dir: THREE.Vector3;
     if (!closed && i === 0) dir = at(1).clone().sub(at(0));
     else if (!closed && i === count - 1) dir = at(count - 1).clone().sub(at(count - 2));
     else dir = at(i + 1).clone().sub(at(i - 1));
@@ -106,7 +108,7 @@ export function buildRibbonGeometry(rawPoints, width, z = 0.35) {
     if (dir.lengthSq() < 1e-8) dir.set(1, 0, 0);
     dir.normalize();
     const side = new THREE.Vector3(-dir.y, dir.x, 0).multiplyScalar(half);
-    const p = points[i];
+    const p = points[i]!;
     positions.push(p.x + side.x, p.y + side.y, z, p.x - side.x, p.y - side.y, z);
   }
 
@@ -125,10 +127,10 @@ export function buildRibbonGeometry(rawPoints, width, z = 0.35) {
 }
 
 /** 楼层分格线，局部坐标，底面在 z = 0。 */
-export function buildFloorLines(width, depth, floors, floorHeight) {
+export function buildFloorLines(width: number, depth: number, floors: number, floorHeight: number) {
   const hw = width / 2;
   const hd = depth / 2;
-  const positions = [];
+  const positions: number[] = [];
   for (let i = 1; i < floors; i += 1) {
     const z = i * floorHeight;
     positions.push(
@@ -147,15 +149,15 @@ export function buildFloorLines(width, depth, floors, floorHeight) {
  * 四面窗格，合并成一个几何体。
  * 只作为近景 LOD 的一部分，远景白模不带窗户。
  */
-export function buildWindowGeometry(width, depth, floors, floorHeight) {
-  const geos = [];
+export function buildWindowGeometry(width: number, depth: number, floors: number, floorHeight: number) {
+  const geos: THREE.PlaneGeometry[] = [];
   const colsX = Math.min(6, Math.max(2, Math.round(width / 8)));
   const colsY = Math.min(4, Math.max(2, Math.round(depth / 10)));
   const winW = Math.min(1.5, (width / colsX) * 0.42);
   const winH = Math.min(1.15, floorHeight * 0.38);
 
   // 先绕 X 把平面立起来：高度沿 Z，法线朝南（-Y），再绕 Z 转到各立面。
-  const add = (x, y, z, turn) => {
+  const add = (x: number, y: number, z: number, turn: number) => {
     const geo = new THREE.PlaneGeometry(winW, winH);
     geo.rotateX(Math.PI / 2);
     if (turn) geo.rotateZ(turn);
@@ -180,18 +182,13 @@ export function buildWindowGeometry(width, depth, floors, floorHeight) {
   return mergeParts(geos);
 }
 
-export function disposeMaterial(material) {
-  if (!material) return;
-  const list = Array.isArray(material) ? material : [material];
-  list.forEach((item) => item.dispose?.());
-}
-
-export function disposeObject(root) {
+export function disposeObject(root?: THREE.Object3D | null) {
   if (!root) return;
-  const materials = new Set();
+  const materials = new Set<THREE.Material>();
   root.traverse((obj) => {
-    obj.geometry?.dispose?.();
-    const list = Array.isArray(obj.material) ? obj.material : [obj.material];
+    const mesh = obj as THREE.Mesh;
+    mesh.geometry?.dispose?.();
+    const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     list.forEach((item) => {
       if (item && !materials.has(item)) {
         materials.add(item);

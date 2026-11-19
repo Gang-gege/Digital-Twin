@@ -1,26 +1,25 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue';
+import type { PointerInfo, ViewInfo } from '../types/park';
 
-const props = defineProps({
-  view: { type: Object, required: true },
-  pointer: { type: Object, required: true },
-  alarmCount: { type: Number, required: true },
-  clock: { type: String, required: true },
-});
+const props = defineProps<{
+  view: ViewInfo;
+  pointer: PointerInfo;
+  alarmCount: number;
+  clock: string;
+}>();
 
 const lnglat = computed(() => {
-  if (props.pointer.lng == null) return '鼠标移入地图后显示坐标';
+  if (props.pointer.lng == null || props.pointer.lat == null) return '鼠标移入地图后显示坐标';
   return `${props.pointer.lng.toFixed(6)}, ${props.pointer.lat.toFixed(6)}`;
 });
 
 const local = computed(() => {
-  if (props.pointer.east == null) return '--';
-  const east = props.pointer.east;
-  const north = props.pointer.north;
-  return `东 ${east.toFixed(1)} m · 北 ${north.toFixed(1)} m`;
+  if (props.pointer.east == null || props.pointer.north == null) return '--';
+  return `东 ${props.pointer.east.toFixed(1)} m · 北 ${props.pointer.north.toFixed(1)} m`;
 });
 
-function num(value, digits = 0) {
+function num(value: number | null | undefined, digits = 0) {
   if (value == null || Number.isNaN(Number(value))) return '--';
   return Number(value).toFixed(digits);
 }

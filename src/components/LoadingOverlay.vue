@@ -1,11 +1,15 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue';
 
-const props = defineProps({
-  visible: Boolean,
-  step: { type: Number, default: 0 },
-  text: { type: String, default: '' },
-  error: { type: String, default: '' },
+const props = withDefaults(defineProps<{
+  visible: boolean;
+  step?: number;
+  text?: string;
+  error?: string;
+}>(), {
+  step: 0,
+  text: '',
+  error: '',
 });
 
 const isKeyError = computed(() => /Key|密钥|\.env|白名单/.test(props.error));
