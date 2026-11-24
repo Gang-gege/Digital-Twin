@@ -43,6 +43,7 @@ export interface AMapOverlay {
   on?: (event: string, handler: () => void) => void;
   setOptions?: (options: Record<string, unknown>) => void;
   setStyle?: (style: Record<string, string>) => void;
+  setCenter?: (center: LngLat) => void;
 }
 
 export interface OverlayGroup extends AMapOverlay {

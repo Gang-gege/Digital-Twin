@@ -1,6 +1,6 @@
 <script setup lang="ts">
 defineEmits<{
-  enter: [scene: 'park' | 'plant'];
+  enter: [scene: 'park' | 'plant' | 'port'];
 }>();
 </script>
 
@@ -22,6 +22,12 @@ defineEmits<{
         <strong>澄源工业厂区</strong>
         <span>厂房、地下管网、叉车巡线和三级告警。适合看电力水务厂区。</span>
         <b>进入厂区</b>
+      </button>
+      <button class="card port" type="button" @click="$emit('enter', 'port')">
+        <em>CONTAINER TERMINAL</em>
+        <strong>澜港集装箱码头</strong>
+        <span>岸桥吊装、集卡路网、箱区调度和作业飞线。适合看码头仿真和实例化渲染。</span>
+        <b>进入码头</b>
       </button>
     </div>
   </main>

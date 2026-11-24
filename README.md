@@ -1,9 +1,10 @@
 # 数字孪生 Demo
 
-打开页面先看到两张卡片，两个场景都保留：
+打开页面先看到三张卡片，三个场景都保留：
 
 - **星澜智慧园区**：楼宇、充电、门禁、人流热力。代码在 `src/park/`。
 - **澄源工业厂区**：电力 / 水务厂房、地下管网、叉车、三级告警。代码在 `src/plant/`。
+- **澜港集装箱码头**：岸桥吊装、集卡路网、箱区调度、作业飞线。代码在 `src/port/`。
 
 两边都是 Vue 3 + TypeScript + SCSS，高德地图 JS API 2.0 的 `GLCustomLayer` 和 Three.js 共用同一块画布。没有后端，数据都是前端 mock。场景里点「返回」回到卡片。
 
@@ -100,13 +101,43 @@ npm run preview
 
 ```text
 src
-├─ App.vue                         两张卡片，选中后进入对应场景
+├─ App.vue                         三张卡片，选中后进入对应场景
 ├─ home/HomeGate.vue               入口
-├─ park/                           星澜智慧园区（原功能）
+├─ park/                           星澜智慧园区
 ├─ plant/                          澄源工业厂区
-├─ core/                           两个场景共用的相机和模型加载
+├─ port/                           澜港集装箱码头
+├─ core/                           场景共用的相机和模型加载
 └─ utils/coord.ts                  GCJ-02 与局部坐标
 ```
+
+## 澜港集装箱码头
+
+锚点在外高桥附近的 GCJ-02 上，箱区和岸桥是虚构布局。坐标仍走 `src/utils/coord.ts`：业务点用米，先换成 GCJ-02，再经 `customCoords.lngLatsToCoords` 进入 Three。`setCenter` 钉在码头中心，渲染时只同步相机，所以旋转、倾斜、缩放时模型贴地不漂。
+
+| 能力 | 在哪 |
+| --- | --- |
+| 共享 WebGL，相机每帧同步 | `src/port/core/MapScene.ts` |
+| 岸桥大车、吊具、吊箱绑定 | `src/port/core/CraneAnimator.ts` |
+| 集卡路网、到点停车、倍速 | `src/port/core/TruckSimulator.ts` |
+| 装船调度和作业日志 | `src/port/core/DispatchSimulator.ts` |
+| 岸桥 / 箱 / 集卡 / 标线 / 告警图层 | `src/port/core/LayerManager.ts` |
+| 飞线、轨迹渐隐、拥堵色带、视锥裁剪 | `src/port/core/effects.ts` |
+| 测距、区域、文字 | `src/port/core/MeasureTool.ts` |
+| 三级告警发光 | `src/port/core/AlarmManager.ts`、`src/port/shaders/materials.ts` |
+| 集装箱、监控、地磅实例化，岸桥可换 GLTF | `createWorld.ts`、`src/core/ModelLoader.ts` |
+
+页面是 16:9 指挥舱：顶栏、左侧看板、右侧三维、底部工具栏。点击地图圆点会飞到三维对象，点击三维对象会加粗对应圆点。底部可以播放、暂停、重置和 0.5x 到 3x。快捷键：`1` 总览，`2` 泊位，`3` 堆场，`4` 闸口，`0` 复位，`N` 昼夜，`B` 框选，空格暂停，`Esc` 退出。
+
+控制台可以调：
+
+```js
+__port.flyPreset('berth')
+__port.setTimeOfDay('night')
+__port.setSpeed(2)
+__port.setLayer('flow', false)
+```
+
+箱色：空箱 `#8aa4b8`，重箱 `#e07a3d`，待提箱 `#4aa3ff`，待装船 `#3dbe8c`。车道绿畅通、黄缓行、红拥堵。告警提示 `#4aa3ff`、预警 `#f0b429`、紧急 `#ff5a62`。
 
 ## 操作
 

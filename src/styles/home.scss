@@ -27,7 +27,7 @@
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 420px));
+  grid-template-columns: repeat(3, minmax(0, 360px));
   gap: 22px;
 }
 
@@ -66,6 +66,11 @@
   &:hover { border-color: rgba(46, 196, 182, 0.8); background: rgba(12, 36, 38, 0.95); }
 }
 
-@media (max-width: 860px) {
+.card.port {
+  em, b { color: #7dd3fc; }
+  &:hover { border-color: rgba(56, 189, 248, 0.8); background: rgba(10, 32, 48, 0.95); }
+}
+
+@media (max-width: 1100px) {
   .cards { grid-template-columns: 1fr; }
 }

@@ -7,5 +7,6 @@ interface ImportMetaEnv {
 
 interface Window {
   _AMapSecurityConfig?: { securityJsCode: string };
-  __park?: import('./core/MapScene').MapScene;
+  __park?: object;
+  __port?: import('./port/core/MapScene').MapScene;
 }

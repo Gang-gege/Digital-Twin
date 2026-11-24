@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "数字孪生 Demo：星澜智慧园区与澄源工业厂区（Vue 3 + TypeScript + SCSS + 高德 JS API 2.0 + Three.js）",
+  "description": "数字孪生 Demo：星澜智慧园区、澄源工业厂区与澜港集装箱码头（Vue 3 + TypeScript + SCSS + 高德 JS API 2.0 + Three.js）",
   "scripts": {
     "dev": "vite",
     "typecheck": "vue-tsc --noEmit",
